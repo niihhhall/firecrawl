@@ -127,6 +127,7 @@ export type EngineScrapeResult = {
   branding?: BrandingProfile;
 
   pdfMetadata?: PdfMetadata;
+  warning?: string;
 
   cacheInfo?: {
     created_at: Date;
