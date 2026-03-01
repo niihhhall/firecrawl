@@ -317,7 +317,9 @@ class WebhookConfig(BaseModel):
     url: str
     headers: Optional[Dict[str, str]] = None
     metadata: Optional[Dict[str, str]] = None
-    events: Optional[List[Literal["completed", "failed", "page", "started"]]] = None
+    events: Optional[
+        List[Literal["completed", "failed", "page", "started", "changed", "error"]]
+    ] = None
 
 
 class AgentWebhookConfig(BaseModel):
@@ -1180,6 +1182,49 @@ class ActiveCrawlsResponse(BaseModel):
 
     success: bool = True
     crawls: List[ActiveCrawl]
+
+
+class MonitorRequest(BaseModel):
+    """Request for starting a monitor job."""
+
+    urls: List[str]
+    interval: Optional[str] = None
+    scrape_options: ScrapeOptions
+    webhook: Optional[WebhookConfig] = None
+    origin: Optional[str] = None
+    integration: Optional[str] = None
+
+
+class MonitorResponse(BaseModel):
+    """Response from monitor start endpoint."""
+
+    id: str
+    url: str
+
+
+class MonitorChangeGroup(BaseModel):
+    """Grouped monitor changes for a single source host."""
+
+    source: str
+    pages: List[Document]
+
+
+class MonitorJob(BaseModel):
+    """Monitor job status and latest data snapshot."""
+
+    id: str
+    status: Literal["active", "cancelled"]
+    urls: List[str]
+    resolved_urls: List[str]
+    interval: str
+    interval_ms: int
+    created_at: str
+    updated_at: str
+    next_run_at: Optional[str] = None
+    last_run_at: Optional[str] = None
+    latest_data: List[MonitorChangeGroup] = Field(default_factory=list)
+    latest_data_at: Optional[str] = None
+    last_error: Optional[str] = None
 
 
 class ActiveCrawlsRequest(BaseModel):

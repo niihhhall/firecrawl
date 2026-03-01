@@ -32,4 +32,6 @@ export const webhookSchema = createWebhookSchema([
   "failed",
   "page",
   "started",
+  "changed",
+  "error",
 ]);

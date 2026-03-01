@@ -1,0 +1,158 @@
+# Manual playground for /v2/monitor
+#
+# Local prerequisites:
+# 1) Start API/workers (one option):
+#    pnpm harness jest apps/api/src/__tests__/snips/v2/scrape.test.ts --runInBand
+# 2) Start the demo webhook/content server (for webhook inspection and optional demo flow):
+#    node apps/api/requests/v2/monitor.local-test-server.cjs
+#
+# Tip:
+# - For local API, PREVIEW_TOKEN usually works.
+# - For hosted/staging API, switch to TEST_API_KEY.
+
+# Local API (use the port where monitor route is running):
+@baseUrl = http://localhost:3102
+# @baseUrl = http://localhost:3002
+# Hosted API:
+# @baseUrl = https://api.firecrawl.dev
+
+# Pick one auth token source:
+@authToken = {{$dotenv PREVIEW_TOKEN}}
+# @authToken = {{$dotenv TEST_API_KEY}}
+
+@demoBase = http://127.0.0.1:8788
+@firecrawlUrl = https://firecrawl.dev
+
+# Optional local demo target (must be public):
+# Monitor target URLs are fetched by the scraping engine, so localhost/127.0.0.1
+# is not reachable as a monitor target.
+# Use a tunnel URL:
+# - cloudflared tunnel --url http://127.0.0.1:8788
+# - or ngrok http 8788
+# @demoPublicBase = https://your-subdomain.trycloudflare.com
+# @demoPublicBase = https://your-subdomain.ngrok-free.app
+@demoPublicBase = {{demoBase}}
+@demoContentUrl = {{demoPublicBase}}/content
+
+# Fill these after creating jobs:
+@quickMonitorId = 019caa44-d17b-73ce-9753-040c1b1424b2
+@demoMonitorId = REPLACE_WITH_DEMO_MONITOR_ID
+
+### Demo server health
+GET {{demoBase}}/health HTTP/1.1
+
+################################################################################
+# Quick flow (default): use firecrawl.dev
+################################################################################
+
+### Q1) Reset webhook log
+DELETE {{demoBase}}/webhooks HTTP/1.1
+
+### Q2) Create monitor for firecrawl.dev
+# First run should build baseline and not emit monitor.changed.
+POST {{baseUrl}}/v2/monitor HTTP/1.1
+Authorization: Bearer {{authToken}}
+content-type: application/json
+
+{
+  "urls": ["{{firecrawlUrl}}"],
+  "interval": "5m",
+  "scrapeOptions": {
+    "formats": [
+      "markdown",
+      {
+        "type": "changeTracking",
+        "modes": ["git-diff"]
+      }
+    ],
+    "onlyMainContent": true
+  },
+  "webhook": {
+    "url": "{{demoBase}}/webhook",
+    "events": ["started", "changed", "error"]
+  }
+}
+
+### Q3) Get status (paste id into @quickMonitorId first)
+GET {{baseUrl}}/v2/monitor/{{quickMonitorId}} HTTP/1.1
+Authorization: Bearer {{authToken}}
+content-type: application/json
+
+### Q4) Check webhook events (expect monitor.started after first run)
+GET {{demoBase}}/webhooks HTTP/1.1
+
+### Q5) After one interval, check status again
+GET {{baseUrl}}/v2/monitor/{{quickMonitorId}} HTTP/1.1
+Authorization: Bearer {{authToken}}
+content-type: application/json
+
+### Q6) Check webhook events again (monitor.changed may appear if content differs)
+GET {{demoBase}}/webhooks HTTP/1.1
+
+### Q7) Cancel quick monitor
+DELETE {{baseUrl}}/v2/monitor/{{quickMonitorId}} HTTP/1.1
+Authorization: Bearer {{authToken}}
+content-type: application/json
+
+### Q8) Verify cancelled state
+GET {{baseUrl}}/v2/monitor/{{quickMonitorId}} HTTP/1.1
+Authorization: Bearer {{authToken}}
+content-type: application/json
+
+################################################################################
+# Optional deterministic demo flow (requires public demo tunnel URL)
+################################################################################
+
+### D1) Set demo content baseline (v1)
+POST {{demoBase}}/content HTTP/1.1
+content-type: application/json
+
+{
+  "content": "# Monitor demo\n\nCurrent value: v1"
+}
+
+### D2) Create monitor for demo content
+POST {{baseUrl}}/v2/monitor HTTP/1.1
+Authorization: Bearer {{authToken}}
+content-type: application/json
+
+{
+  "urls": ["{{demoContentUrl}}"],
+  "interval": "5m",
+  "scrapeOptions": {
+    "formats": [
+      "markdown",
+      {
+        "type": "changeTracking",
+        "modes": ["git-diff"]
+      }
+    ],
+    "onlyMainContent": true
+  },
+  "webhook": {
+    "url": "{{demoBase}}/webhook",
+    "events": ["started", "changed", "error"]
+  }
+}
+
+### D3) Get status (paste id into @demoMonitorId first)
+GET {{baseUrl}}/v2/monitor/{{demoMonitorId}} HTTP/1.1
+Authorization: Bearer {{authToken}}
+content-type: application/json
+
+### D4) Update demo content to v2
+POST {{demoBase}}/content HTTP/1.1
+content-type: application/json
+
+{
+  "content": "# Monitor demo\n\nCurrent value: v2"
+}
+
+### D5) Check webhook events
+GET {{demoBase}}/webhooks HTTP/1.1
+
+### D6) Cancel demo monitor
+DELETE {{baseUrl}}/v2/monitor/{{demoMonitorId}} HTTP/1.1
+Authorization: Bearer {{authToken}}
+content-type: application/json
+

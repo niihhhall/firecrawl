@@ -24,6 +24,9 @@ from .types import (
     AgentWebhookConfig,
     CrawlErrorsResponse,
     ActiveCrawlsResponse,
+    MonitorRequest,
+    MonitorResponse,
+    MonitorJob,
     MapOptions,
     MapData,
     FormatOption,
@@ -47,6 +50,7 @@ from .methods import crawl as crawl_module
 from .methods import batch as batch_module
 from .methods import search as search_module
 from .methods import map as map_module
+from .methods import monitor as monitor_module
 from .methods import batch as batch_methods
 from .methods import usage as usage_methods
 from .methods import extract as extract_module
@@ -494,6 +498,58 @@ class FirecrawlClient:
             ActiveCrawlsResponse containing the list of active crawl jobs
         """
         return self.get_active_crawls()
+
+    def start_monitor(
+        self,
+        urls: List[str],
+        *,
+        scrape_options: ScrapeOptions,
+        interval: Optional[str] = None,
+        webhook: Optional[WebhookConfig] = None,
+        origin: Optional[str] = None,
+        integration: Optional[str] = None,
+    ) -> MonitorResponse:
+        request = MonitorRequest(
+            urls=urls,
+            scrape_options=scrape_options,
+            interval=interval,
+            webhook=webhook,
+            origin=origin,
+            integration=integration,
+        )
+        return monitor_module.start_monitor(self.http_client, request)
+
+    def get_monitor(self, job_id: str) -> MonitorJob:
+        return monitor_module.get_monitor_status(self.http_client, job_id)
+
+    def cancel_monitor(self, job_id: str) -> bool:
+        return monitor_module.cancel_monitor(self.http_client, job_id)
+
+    # Convenience aliases for prototype naming parity
+    def monitor(
+        self,
+        urls: List[str],
+        *,
+        scrape_options: ScrapeOptions,
+        interval: Optional[str] = None,
+        webhook: Optional[WebhookConfig] = None,
+        origin: Optional[str] = None,
+        integration: Optional[str] = None,
+    ) -> MonitorResponse:
+        return self.start_monitor(
+            urls,
+            scrape_options=scrape_options,
+            interval=interval,
+            webhook=webhook,
+            origin=origin,
+            integration=integration,
+        )
+
+    def monitor_get(self, job_id: str) -> MonitorJob:
+        return self.get_monitor(job_id)
+
+    def monitor_stop(self, job_id: str) -> bool:
+        return self.cancel_monitor(job_id)
 
     def map(
         self,

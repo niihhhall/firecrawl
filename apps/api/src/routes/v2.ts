@@ -9,6 +9,9 @@ import { batchScrapeController } from "../controllers/v2/batch-scrape";
 import { crawlController } from "../controllers/v2/crawl";
 import { crawlParamsPreviewController } from "../controllers/v2/crawl-params-preview";
 import { crawlStatusController } from "../controllers/v2/crawl-status";
+import { monitorController } from "../controllers/v2/monitor";
+import { monitorStatusController } from "../controllers/v2/monitor-status";
+import { monitorCancelController } from "../controllers/v2/monitor-cancel";
 import { mapController } from "../controllers/v2/map";
 import { crawlErrorsController } from "../controllers/v2/crawl-errors";
 import { ongoingCrawlsController } from "../controllers/v2/crawl-ongoing";
@@ -223,6 +226,28 @@ v2Router.post(
   blocklistMiddleware,
   idempotencyMiddleware,
   wrap(crawlController),
+);
+
+v2Router.post(
+  "/monitor",
+  authMiddleware(RateLimiterMode.Crawl),
+  countryCheck,
+  idempotencyMiddleware,
+  wrap(monitorController),
+);
+
+v2Router.get(
+  "/monitor/:jobId",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  validateJobIdParam,
+  wrap(monitorStatusController),
+);
+
+v2Router.delete(
+  "/monitor/:jobId",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  validateJobIdParam,
+  wrap(monitorCancelController),
 );
 
 v2Router.post(

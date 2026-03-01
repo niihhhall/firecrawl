@@ -164,7 +164,9 @@ export interface WebhookConfig {
   url: string;
   headers?: Record<string, string>;
   metadata?: Record<string, string>;
-  events?: Array<'completed' | 'failed' | 'page' | 'started'>;
+  events?: Array<
+    "completed" | "failed" | "page" | "started" | "changed" | "error"
+  >;
 }
 
 // Agent webhook events differ from crawl: has 'action' and 'cancelled', no 'page'
@@ -631,6 +633,41 @@ export interface ActiveCrawl {
 export interface ActiveCrawlsResponse {
   success: boolean;
   crawls: ActiveCrawl[];
+}
+
+export interface MonitorOptions {
+  urls: string[];
+  interval?: string;
+  scrapeOptions: ScrapeOptions;
+  webhook?: WebhookConfig;
+  origin?: string;
+  integration?: string | null;
+}
+
+export interface MonitorResponse {
+  id: string;
+  url: string;
+}
+
+export interface MonitorChangedGroup {
+  source: string;
+  pages: Document[];
+}
+
+export interface MonitorJob {
+  id: string;
+  status: "active" | "cancelled";
+  urls: string[];
+  resolvedUrls: string[];
+  interval: string;
+  intervalMs: number;
+  createdAt: string;
+  updatedAt: string;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  latestData: MonitorChangedGroup[];
+  latestDataAt: string | null;
+  lastError: string | null;
 }
 
 export interface ErrorDetails {

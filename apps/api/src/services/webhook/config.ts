@@ -24,7 +24,7 @@ export async function getWebhookConfig(
         url: selfHostedUrl,
         headers: {},
         metadata: {},
-        events: ["completed", "failed", "page", "started"],
+        events: ["completed", "failed", "page", "started", "changed", "error"],
       },
       secret: config.SELF_HOSTED_WEBHOOK_HMAC_SECRET,
     };

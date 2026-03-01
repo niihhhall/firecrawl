@@ -13,6 +13,9 @@ export enum WebhookEvent {
   EXTRACT_STARTED = "extract.started",
   EXTRACT_COMPLETED = "extract.completed",
   EXTRACT_FAILED = "extract.failed",
+  MONITOR_STARTED = "monitor.started",
+  MONITOR_CHANGED = "monitor.changed",
+  MONITOR_ERROR = "monitor.error",
 }
 
 export type WebhookEventDataMap = {
@@ -25,6 +28,9 @@ export type WebhookEventDataMap = {
   [WebhookEvent.EXTRACT_STARTED]: ExtractStartedData;
   [WebhookEvent.EXTRACT_COMPLETED]: ExtractCompletedData;
   [WebhookEvent.EXTRACT_FAILED]: ExtractFailedData;
+  [WebhookEvent.MONITOR_STARTED]: MonitorStartedData;
+  [WebhookEvent.MONITOR_CHANGED]: MonitorChangedData;
+  [WebhookEvent.MONITOR_ERROR]: MonitorErrorData;
 };
 
 export type WebhookConfig = z.infer<typeof webhookSchema>;
@@ -112,4 +118,25 @@ interface ExtractCompletedData extends BaseWebhookData {
 interface ExtractFailedData extends BaseWebhookData {
   success: false;
   error: string;
+}
+
+// monitor
+interface MonitorStartedData extends BaseWebhookData {
+  success: true;
+}
+
+type MonitorChangedPageGroup = {
+  source: string;
+  pages: Document[];
+};
+
+interface MonitorChangedData extends BaseWebhookData {
+  success: true;
+  data: MonitorChangedPageGroup[];
+}
+
+interface MonitorErrorData extends BaseWebhookData {
+  success: false;
+  error: string;
+  data: Array<Record<string, string>>;
 }

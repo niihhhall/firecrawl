@@ -12,6 +12,11 @@ import {
   crawlParamsPreview,
 } from "./methods/crawl";
 import {
+  startMonitor,
+  getMonitorStatus,
+  cancelMonitor,
+} from "./methods/monitor";
+import {
   startBatchScrape,
   getBatchScrapeStatus,
   getBatchScrapeErrors,
@@ -50,6 +55,9 @@ import type {
   BrowserExecuteResponse,
   BrowserDeleteResponse,
   BrowserListResponse,
+  MonitorJob,
+  MonitorOptions,
+  MonitorResponse,
 } from "./types";
 import { Watcher } from "./watcher";
 import type { WatcherOptions } from "./watcher";
@@ -198,6 +206,55 @@ export class FirecrawlClient {
    */
   async getActiveCrawls(): Promise<ActiveCrawlsResponse> {
     return getActiveCrawls(this.http);
+  }
+
+  // Monitor
+  /**
+   * Start a long-lived monitor job (async).
+   * @param req Monitor configuration (urls, interval, scrapeOptions, webhook).
+   * @returns Monitor job id and status URL.
+   */
+  async startMonitor(req: MonitorOptions): Promise<MonitorResponse> {
+    return startMonitor(this.http, req);
+  }
+  /**
+   * Get monitor status and latest change payload.
+   * @param jobId Monitor job id.
+   */
+  async getMonitor(jobId: string): Promise<MonitorJob> {
+    return getMonitorStatus(this.http, jobId);
+  }
+  /**
+   * Cancel a monitor job.
+   * @param jobId Monitor job id.
+   * @returns True if cancelled.
+   */
+  async cancelMonitor(jobId: string): Promise<boolean> {
+    return cancelMonitor(this.http, jobId);
+  }
+  /**
+   * Convenience alias for starting monitor jobs.
+   * @param req Monitor configuration.
+   * @returns Monitor job id and status URL.
+   */
+  async monitor(req: MonitorOptions): Promise<MonitorResponse> {
+    return startMonitor(this.http, req);
+  }
+  /**
+   * Convenience alias for monitor status checks.
+   * @param jobId Monitor job id.
+   * @returns Monitor status payload.
+   */
+  async monitorGet(jobId: string): Promise<MonitorJob> {
+    return getMonitorStatus(this.http, jobId);
+  }
+  /**
+   * Convenience alias for monitor cancellation.
+   * @param jobId Monitor job id.
+   * @returns True if cancelled.
+   */
+  async monitorStop(jobId: string): Promise<boolean> {
+    return cancelMonitor(this.http, jobId);
   }
   /**
    * Preview normalized crawl parameters produced by a natural-language prompt.

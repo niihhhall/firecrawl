@@ -67,6 +67,12 @@ class V2Proxy:
             self.get_active_crawls = client_instance.get_active_crawls
             self.active_crawls = client_instance.active_crawls
             self.crawl_params_preview = client_instance.crawl_params_preview
+            self.start_monitor = client_instance.start_monitor
+            self.get_monitor = client_instance.get_monitor
+            self.cancel_monitor = client_instance.cancel_monitor
+            self.monitor = client_instance.monitor
+            self.monitor_get = client_instance.monitor_get
+            self.monitor_stop = client_instance.monitor_stop
 
             self.extract = client_instance.extract
             self.start_extract = client_instance.start_extract
@@ -140,6 +146,12 @@ class AsyncV2Proxy:
             self.get_active_crawls = client_instance.get_active_crawls
             self.active_crawls = client_instance.active_crawls
             self.crawl_params_preview = client_instance.crawl_params_preview
+            self.start_monitor = client_instance.start_monitor
+            self.get_monitor = client_instance.get_monitor
+            self.cancel_monitor = client_instance.cancel_monitor
+            self.monitor = client_instance.monitor
+            self.monitor_get = client_instance.monitor_get
+            self.monitor_stop = client_instance.monitor_stop
 
             self.extract = client_instance.extract
             self.start_extract = client_instance.start_extract
@@ -233,6 +245,12 @@ class Firecrawl:
         self.get_crawl_errors = self._v2_client.get_crawl_errors
         self.get_active_crawls = self._v2_client.get_active_crawls
         self.active_crawls = self._v2_client.active_crawls
+        self.start_monitor = self._v2_client.start_monitor
+        self.get_monitor = self._v2_client.get_monitor
+        self.cancel_monitor = self._v2_client.cancel_monitor
+        self.monitor = self._v2_client.monitor
+        self.monitor_get = self._v2_client.monitor_get
+        self.monitor_stop = self._v2_client.monitor_stop
 
         self.start_batch_scrape = self._v2_client.start_batch_scrape
         self.get_batch_scrape_status = self._v2_client.get_batch_scrape_status
@@ -304,6 +322,12 @@ class AsyncFirecrawl:
         self.get_crawl_errors = self._v2_client.get_crawl_errors
         self.active_crawls = self._v2_client.active_crawls
         self.crawl_params_preview = self._v2_client.crawl_params_preview
+        self.start_monitor = self._v2_client.start_monitor
+        self.get_monitor = self._v2_client.get_monitor
+        self.cancel_monitor = self._v2_client.cancel_monitor
+        self.monitor = self._v2_client.monitor
+        self.monitor_get = self._v2_client.monitor_get
+        self.monitor_stop = self._v2_client.monitor_stop
 
         self.start_batch_scrape = self._v2_client.start_batch_scrape
         self.get_batch_scrape_status = self._v2_client.get_batch_scrape_status

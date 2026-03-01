@@ -20,6 +20,9 @@ from .types import (
     CrawlParamsData,
     CrawlErrorsResponse,
     ActiveCrawlsResponse,
+    MonitorRequest,
+    MonitorResponse,
+    MonitorJob,
     MapOptions,
     MapData,
     FormatOption,
@@ -47,6 +50,7 @@ from .methods.aio import usage as async_usage # type: ignore[attr-defined]
 from .methods.aio import extract as async_extract  # type: ignore[attr-defined]
 from .methods.aio import agent as async_agent  # type: ignore[attr-defined]
 from .methods.aio import browser as async_browser  # type: ignore[attr-defined]
+from .methods.aio import monitor as async_monitor  # type: ignore[attr-defined]
 
 from .watcher_async import AsyncWatcher
 
@@ -235,6 +239,58 @@ class AsyncFirecrawlClient:
 
     async def active_crawls(self) -> ActiveCrawlsResponse:
         return await self.get_active_crawls()
+
+    async def start_monitor(
+        self,
+        urls: List[str],
+        *,
+        scrape_options: ScrapeOptions,
+        interval: Optional[str] = None,
+        webhook: Optional[WebhookConfig] = None,
+        origin: Optional[str] = None,
+        integration: Optional[str] = None,
+    ) -> MonitorResponse:
+        request = MonitorRequest(
+            urls=urls,
+            scrape_options=scrape_options,
+            interval=interval,
+            webhook=webhook,
+            origin=origin,
+            integration=integration,
+        )
+        return await async_monitor.start_monitor(self.async_http_client, request)
+
+    async def get_monitor(self, job_id: str) -> MonitorJob:
+        return await async_monitor.get_monitor_status(self.async_http_client, job_id)
+
+    async def cancel_monitor(self, job_id: str) -> bool:
+        return await async_monitor.cancel_monitor(self.async_http_client, job_id)
+
+    # Convenience aliases for prototype naming parity
+    async def monitor(
+        self,
+        urls: List[str],
+        *,
+        scrape_options: ScrapeOptions,
+        interval: Optional[str] = None,
+        webhook: Optional[WebhookConfig] = None,
+        origin: Optional[str] = None,
+        integration: Optional[str] = None,
+    ) -> MonitorResponse:
+        return await self.start_monitor(
+            urls,
+            scrape_options=scrape_options,
+            interval=interval,
+            webhook=webhook,
+            origin=origin,
+            integration=integration,
+        )
+
+    async def monitor_get(self, job_id: str) -> MonitorJob:
+        return await self.get_monitor(job_id)
+
+    async def monitor_stop(self, job_id: str) -> bool:
+        return await self.cancel_monitor(job_id)
 
     # Map
     async def map(
