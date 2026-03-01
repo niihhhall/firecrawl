@@ -20,7 +20,11 @@ import {
 } from "../../../../controllers/v2/types";
 import type { PDFMode } from "../../../../controllers/v2/types";
 import { processPdf, detectPdf } from "@mendable/firecrawl-rs";
-import { MAX_FILE_SIZE, MILLISECONDS_PER_PAGE } from "./types";
+import {
+  MAX_FILE_SIZE,
+  MILLISECONDS_PER_PAGE,
+  PDF_TIMEOUT_BUFFER_MS,
+} from "./types";
 import type { PDFProcessorResult } from "./types";
 import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { scrapePDFWithParsePDF } from "./pdfParse";
@@ -271,7 +275,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         scrapeTimeout,
         url: meta.rewrittenUrl ?? meta.url,
       });
-      pdfTrimmedWarning = `The PDF has ${effectivePageCount} pages, but only ${maxPagesForTimeout} could be processed within your timeout. To get all pages, increase the timeout to at least ${effectivePageCount * MILLISECONDS_PER_PAGE + 5000}ms (${Math.ceil((effectivePageCount * MILLISECONDS_PER_PAGE + 5000) / 1000)} seconds).`;
+      pdfTrimmedWarning = `The PDF has ${effectivePageCount} pages, but only ${maxPagesForTimeout} could be processed within your timeout. To get all pages, increase the timeout to at least ${effectivePageCount * MILLISECONDS_PER_PAGE + PDF_TIMEOUT_BUFFER_MS}ms (${Math.ceil((effectivePageCount * MILLISECONDS_PER_PAGE + PDF_TIMEOUT_BUFFER_MS) / 1000)} seconds).`;
       effectivePageCount = maxPagesForTimeout;
       maxPages = maxPagesForTimeout;
     }
