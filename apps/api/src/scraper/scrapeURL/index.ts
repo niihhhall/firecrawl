@@ -23,7 +23,7 @@ import {
   shouldUseIndex,
 } from "./engines";
 import { parseMarkdown } from "../../lib/html-to-markdown";
-import { hasFormatOfType } from "../../lib/format-utils";
+import { hasFormatOfType, needsMarkdownContent } from "../../lib/format-utils";
 import {
   ActionError,
   AddFeatureError,
@@ -348,15 +348,7 @@ async function scrapeURLLoopIter(
       engine,
     );
 
-    const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
-    const hasChangeTracking = hasFormatOfType(
-      meta.options.formats,
-      "changeTracking",
-    );
-    const hasJson = hasFormatOfType(meta.options.formats, "json");
-    const hasSummary = hasFormatOfType(meta.options.formats, "summary");
-    const needsMarkdown =
-      hasMarkdown || hasChangeTracking || hasJson || hasSummary;
+    const needsMarkdown = needsMarkdownContent(meta.options.formats);
 
     let checkMarkdown: string;
     const htmlSize = engineResult.html?.length ?? 0;

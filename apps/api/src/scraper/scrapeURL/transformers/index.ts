@@ -20,7 +20,10 @@ import { deriveDiff } from "./diff";
 import { useIndex, useSearchIndex } from "../../../services/index";
 import { sendDocumentToIndex } from "../engines/index/index";
 import { sendDocumentToSearchIndex } from "./sendToSearchIndex";
-import { hasFormatOfType } from "../../../lib/format-utils";
+import {
+  hasFormatOfType,
+  needsMarkdownContent,
+} from "../../../lib/format-utils";
 import { brandingTransformer } from "../../../lib/branding/transformer";
 import { indexerQueue } from "../../../services/indexing/indexer-queue";
 import { config } from "../../../config";
@@ -82,21 +85,8 @@ async function deriveMarkdownFromHTML(
   // - changeTracking requires markdown
   // - json format requires markdown (for LLM extraction)
   // - summary format requires markdown (for summarization)
-  const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
-  const hasChangeTracking = hasFormatOfType(
-    meta.options.formats,
-    "changeTracking",
-  );
-  const hasJson = hasFormatOfType(meta.options.formats, "json");
-  const hasSummary = hasFormatOfType(meta.options.formats, "summary");
-  const hasQuery = hasFormatOfType(meta.options.formats, "query");
-
   if (
-    !hasMarkdown &&
-    !hasChangeTracking &&
-    !hasJson &&
-    !hasSummary &&
-    !hasQuery &&
+    !needsMarkdownContent(meta.options.formats) &&
     !meta.options.onlyCleanContent
   ) {
     return document;
