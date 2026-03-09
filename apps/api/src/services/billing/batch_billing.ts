@@ -123,7 +123,7 @@ export async function processBillingBatch() {
 
       try {
         // Execute the actual billing
-        await withAuth(supaBillTeam, {
+        const billingResult = await withAuth(supaBillTeam, {
           success: true,
           message: "No DB, bypassed.",
         })(
@@ -135,12 +135,20 @@ export async function processBillingBatch() {
           group.is_extract,
         );
 
+        if (!billingResult.success) {
+          logger.warn(
+            `⚠️ Billing returned success: false for team ${group.team_id}, skipping Autumn tracking`,
+            { billingResult, team_id: group.team_id, credits: group.total_credits },
+          );
+          continue;
+        }
+
         logger.info(
           `✅ Successfully billed team ${group.team_id} for ${group.total_credits} ${group.is_extract ? "tokens" : "credits"}`,
         );
 
-        // Track usage in Autumn only after the billing RPC has succeeded, so
-        // Autumn never overstates usage for operations that ultimately failed.
+        // Track usage in Autumn only after the billing RPC has confirmed success,
+        // so Autumn never overstates usage for operations that ultimately failed.
         void autumnService.trackCredits({
           teamId: group.team_id,
           value: group.total_credits,
