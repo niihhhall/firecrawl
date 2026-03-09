@@ -5,6 +5,7 @@ import { supabase_rr_service } from "../supabase";
 import { autumnClient } from "./client";
 import type {
   CreateEntityParams,
+  CreateEntityResult,
   EnsureOrgProvisionedParams,
   EnsureTeamProvisionedParams,
   GetEntityParams,
@@ -19,12 +20,46 @@ const AUTUMN_DEFAULT_PLAN_ID = "free";
 const AUTUMN_PROVISIONING_LOOKBACK_MS = 15 * 60 * 1000;
 
 /**
+ * Size-bounded Map with FIFO eviction. When the map is at capacity the oldest
+ * inserted entry is removed before inserting the new one, keeping memory usage
+ * at most O(max) regardless of how many unique keys are seen over time.
+ */
+class BoundedMap<K, V> extends Map<K, V> {
+  constructor(private readonly max: number) {
+    super();
+  }
+
+  set(key: K, value: V): this {
+    if (!this.has(key) && this.size >= this.max) {
+      this.delete(this.keys().next().value as K);
+    }
+    return super.set(key, value);
+  }
+}
+
+/**
+ * Size-bounded Set with FIFO eviction. Mirrors BoundedMap for set semantics.
+ */
+class BoundedSet<V> extends Set<V> {
+  constructor(private readonly max: number) {
+    super();
+  }
+
+  add(value: V): this {
+    if (!this.has(value) && this.size >= this.max) {
+      this.delete(this.values().next().value as V);
+    }
+    return super.add(value);
+  }
+}
+
+/**
  * Wraps Autumn customer/entity provisioning and usage tracking for team credit billing.
  */
-class AutumnService {
-  private customerOrgCache = new Map<string, string>();
-  private ensuredOrgs = new Set<string>();
-  private ensuredTeams = new Set<string>();
+export class AutumnService {
+  private customerOrgCache = new BoundedMap<string, string>(50_000);
+  private ensuredOrgs = new BoundedSet<string>(50_000);
+  private ensuredTeams = new BoundedSet<string>(50_000);
   private backfillRunning = false;
   /** Serialises concurrent backfills per team (see backfillUsageIfNeeded). */
   private backfillQueue = new Map<string, Promise<void>>();
@@ -102,8 +137,8 @@ class AutumnService {
     entityId,
     featureId,
     name,
-  }: CreateEntityParams): Promise<unknown | null> {
-    if (!autumnClient) return null;
+  }: CreateEntityParams): Promise<CreateEntityResult> {
+    if (!autumnClient) return { ok: false, conflict: false };
 
     try {
       const entity = await autumnClient.entities.create({
@@ -117,11 +152,12 @@ class AutumnService {
         entityId,
         featureId,
       });
-      return entity;
+      return { ok: true, entity };
     } catch (error) {
       const status = this.getErrorStatus(error);
       if (status === 409) {
-        return null;
+        // Entity already exists — treat as success for provisioning purposes.
+        return { ok: false, conflict: true };
       }
       logger.warn("Autumn createEntity failed", {
         customerId,
@@ -129,7 +165,7 @@ class AutumnService {
         featureId,
         error,
       });
-      return null;
+      return { ok: false, conflict: false };
     }
   }
 
@@ -193,6 +229,9 @@ class AutumnService {
 
   /**
    * Ensures the Autumn entity exists for a team under its org customer.
+   *
+   * The `ensuredTeams` check is performed first so that already-provisioned
+   * teams incur no HTTP calls — not even the `ensureOrgProvisioned` round-trip.
    */
   async ensureTeamProvisioned({
     teamId,
@@ -200,33 +239,35 @@ class AutumnService {
     name,
   }: EnsureTeamProvisionedParams): Promise<void> {
     if (this.isPreviewTeam(teamId)) return;
+    // Fast path: team is already fully provisioned.
+    if (this.ensuredTeams.has(teamId)) return;
 
     try {
       const resolvedOrgId = orgId ?? await this.lookupOrgIdForTeam(teamId);
       this.customerOrgCache.set(teamId, resolvedOrgId);
       await this.ensureOrgProvisioned({ orgId: resolvedOrgId });
 
-      if (this.ensuredTeams.has(teamId)) return;
       const entity = await this.getEntity({
         customerId: resolvedOrgId,
         entityId: teamId,
       });
 
       if (!entity) {
-        await this.createEntity({
+        const result = await this.createEntity({
           customerId: resolvedOrgId,
           entityId: teamId,
           featureId: CREDITS_FEATURE_ID,
           name,
         });
-        const createdEntity = await this.getEntity({
-          customerId: resolvedOrgId,
-          entityId: teamId,
-        });
-        if (!createdEntity) {
-          return;
+        if (result.ok || result.conflict) {
+          // Entity was just created, or already existed (409 race) — either way
+          // it's present. No need for a second getEntity confirmation call.
+          this.ensuredTeams.add(teamId);
         }
+        // Genuine error: leave ensuredTeams empty so the next request retries.
+        return;
       }
+
       this.ensuredTeams.add(teamId);
     } catch (error) {
       logger.warn("Autumn ensureTeamProvisioned failed", { teamId, error });
@@ -235,9 +276,18 @@ class AutumnService {
 
   /**
    * Resolves and warms the Autumn customer/entity context needed before tracking usage.
+   *
+   * When both caches are warm (orgId known + team fully provisioned) we return
+   * immediately without calling ensureTeamProvisioned, avoiding redundant
+   * map/set lookups on every billing operation.
    */
   private async ensureTrackingContext(teamId: string): Promise<string> {
     const cached = this.customerOrgCache.get(teamId);
+    if (cached && this.ensuredTeams.has(teamId)) {
+      // Both caches are warm — no provisioning work needed.
+      return cached;
+    }
+
     if (cached) {
       await this.ensureTeamProvisioned({ teamId, orgId: cached });
       return cached;
@@ -266,11 +316,14 @@ class AutumnService {
       .catch(() => {}) // don't stall the queue on errors from the previous call
       .then(() => this._backfillUsageIfNeeded(teamId, customerId));
     this.backfillQueue.set(teamId, next);
+    // Suppress the unhandled-rejection on the derived finally-promise: when
+    // `next` rejects, `.finally()` re-rejects with the same reason and returns
+    // a new promise that needs its own rejection handler.
     next.finally(() => {
       if (this.backfillQueue.get(teamId) === next) {
         this.backfillQueue.delete(teamId);
       }
-    });
+    }).catch(() => {});
     return next;
   }
 

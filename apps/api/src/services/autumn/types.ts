@@ -42,3 +42,8 @@ export type TrackCreditsParams = {
   value: number;
   properties?: Record<string, unknown>;
 };
+
+export type CreateEntityResult =
+  | { ok: true; entity: unknown }
+  | { ok: false; conflict: true }
+  | { ok: false; conflict: false };
