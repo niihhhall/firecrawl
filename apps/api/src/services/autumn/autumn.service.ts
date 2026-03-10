@@ -16,18 +16,34 @@ import type {
 const CREDITS_FEATURE_ID = "CREDITS";
 
 /**
+ * Deterministic bucket for an org UUID.
+ *
+ * Takes the first 8 hex digits of the id (after stripping dashes) and maps
+ * them to an integer in [0, 100).  The same orgId always lands in the same
+ * bucket so the experiment decision is stable across requests.
+ */
+export function orgBucket(orgId: string): number {
+  const hex = orgId.replace(/-/g, "").slice(0, 8);
+  return parseInt(hex, 16) % 100;
+}
+
+/**
  * Returns true when the Autumn experiment is active.
  *
- * Checked once at each top-level billing entry point (`reserveCredits`).
+ * Without an orgId the check is a simple on/off flag — useful as a fast
+ * bail-out before the orgId is known.  When an orgId is supplied the
+ * stable percent gate is also evaluated so the same org always gets the
+ * same answer.
+ *
+ * Only checked at the top-level billing entry point (`reserveCredits`).
  * NOT checked by `refundCredits` (already guarded by `autumnReserved`) or
- * `ensureTeamProvisioned` (called internally by reserveCredits after the
- * gate, and also handled by firecrawl-web edge functions independently).
+ * `ensureTeamProvisioned` (handled by firecrawl-web edge functions
+ * independently).
  */
-export function isAutumnEnabled(): boolean {
-  return (
-    config.AUTUMN_EXPERIMENT === "true" &&
-    Math.random() * 100 < config.AUTUMN_EXPERIMENT_PERCENT
-  );
+export function isAutumnEnabled(orgId?: string): boolean {
+  if (config.AUTUMN_EXPERIMENT !== "true") return false;
+  if (!orgId || config.AUTUMN_EXPERIMENT_PERCENT >= 100) return true;
+  return orgBucket(orgId) < config.AUTUMN_EXPERIMENT_PERCENT;
 }
 
 const AUTUMN_DEFAULT_PLAN_ID = "free";
@@ -279,6 +295,18 @@ export class AutumnService {
   }
 
   /**
+   * Resolves the orgId for a team, returning the cached value when available
+   * and populating the cache on miss.  Does NOT provision anything.
+   */
+  private async resolveOrgId(teamId: string): Promise<string> {
+    const cached = this.customerOrgCache.get(teamId);
+    if (cached) return cached;
+    const orgId = await this.lookupOrgIdForTeam(teamId);
+    this.customerOrgCache.set(teamId, orgId);
+    return orgId;
+  }
+
+  /**
    * Resolves and warms the Autumn customer/entity context needed before tracking usage.
    *
    * When both caches are warm (orgId known + team fully provisioned) we return
@@ -286,39 +314,34 @@ export class AutumnService {
    * map/set lookups on every billing operation.
    */
   private async ensureTrackingContext(teamId: string): Promise<string> {
-    const cached = this.customerOrgCache.get(teamId);
-    if (cached && this.ensuredTeams.has(teamId)) {
-      // Both caches are warm — no provisioning work needed.
-      return cached;
+    const orgId = await this.resolveOrgId(teamId);
+    if (!this.ensuredTeams.has(teamId)) {
+      await this.ensureTeamProvisioned({ teamId, orgId });
     }
-
-    if (cached) {
-      await this.ensureTeamProvisioned({ teamId, orgId: cached });
-      return cached;
-    }
-
-    const orgId = await this.lookupOrgIdForTeam(teamId);
-    // Rewarm the cache immediately so that a concurrent or subsequent call that
-    // finds ensuredTeams warm but customerOrgCache evicted avoids another DB hit.
-    this.customerOrgCache.set(teamId, orgId);
-    await this.ensureTeamProvisioned({ teamId, orgId });
     return orgId;
   }
 
   /**
    * Records a credit usage event in Autumn at request time.
    * Returns true on success, false if Autumn is unavailable or an error occurs.
+   *
+   * The experiment gate is evaluated here — once per request — using a stable
+   * bucket derived from the org UUID so the same org always gets the same
+   * answer for a given AUTUMN_EXPERIMENT_PERCENT value.
    */
   async reserveCredits({
     teamId,
     value,
     properties,
   }: TrackCreditsParams): Promise<boolean> {
-    if (!isAutumnEnabled()) return false;
+    if (!isAutumnEnabled()) return false; // fast bail-out: experiment off
     if (!autumnClient) return false;
     if (this.isPreviewTeam(teamId)) return false;
 
     try {
+      const orgId = await this.resolveOrgId(teamId);
+      if (!isAutumnEnabled(orgId)) return false; // stable percent gate
+
       const customerId = await this.ensureTrackingContext(teamId);
       await this.track({
         customerId,
