@@ -12,8 +12,12 @@ import { jest } from "@jest/globals";
 // Mocks — must be declared before the import under test so Jest hoists them.
 // ---------------------------------------------------------------------------
 
-const mockTrack = jest.fn<(args: any) => Promise<void>>().mockResolvedValue(undefined);
-const mockGetOrCreate = jest.fn<(args: any) => Promise<unknown>>().mockResolvedValue({ id: "org-1" });
+const mockTrack = jest
+  .fn<(args: any) => Promise<void>>()
+  .mockResolvedValue(undefined);
+const mockGetOrCreate = jest
+  .fn<(args: any) => Promise<unknown>>()
+  .mockResolvedValue({ id: "org-1" });
 const mockEntityGet = jest.fn<(args: any) => Promise<unknown>>();
 const mockEntityCreate = jest.fn<(args: any) => Promise<unknown>>();
 
@@ -56,8 +60,21 @@ jest.mock("../../supabase", () => ({
   },
 }));
 
+jest.mock("../../../config", () => ({
+  config: {
+    AUTUMN_EXPERIMENT: "true",
+    AUTUMN_EXPERIMENT_PERCENT: 100,
+  },
+}));
+
 // Import AFTER mocks are wired up.
-import { AutumnService, BoundedMap, BoundedSet } from "../autumn.service";
+import {
+  AutumnService,
+  BoundedMap,
+  BoundedSet,
+  isAutumnEnabled,
+} from "../autumn.service";
+import { config } from "../../../config";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -90,7 +107,9 @@ beforeEach(() => {
 describe("BoundedMap eviction", () => {
   it("never exceeds its cap", () => {
     const m = new BoundedMap<number, number>(3);
-    m.set(1, 1); m.set(2, 2); m.set(3, 3);
+    m.set(1, 1);
+    m.set(2, 2);
+    m.set(3, 3);
     expect(m.size).toBe(3);
     m.set(4, 4); // evicts key 1
     expect(m.size).toBe(3);
@@ -100,7 +119,8 @@ describe("BoundedMap eviction", () => {
 
   it("does not evict on update of existing key", () => {
     const m = new BoundedMap<number, number>(2);
-    m.set(1, 1); m.set(2, 2);
+    m.set(1, 1);
+    m.set(2, 2);
     m.set(1, 99); // update, not a new entry
     expect(m.size).toBe(2);
     expect(m.get(1)).toBe(99);
@@ -111,7 +131,9 @@ describe("BoundedMap eviction", () => {
 describe("BoundedSet eviction", () => {
   it("never exceeds its cap", () => {
     const s = new BoundedSet<number>(3);
-    s.add(1); s.add(2); s.add(3);
+    s.add(1);
+    s.add(2);
+    s.add(3);
     expect(s.size).toBe(3);
     s.add(4); // evicts value 1
     expect(s.size).toBe(3);
@@ -121,7 +143,8 @@ describe("BoundedSet eviction", () => {
 
   it("does not evict on re-add of existing value", () => {
     const s = new BoundedSet<number>(2);
-    s.add(1); s.add(2);
+    s.add(1);
+    s.add(2);
     s.add(1); // already present, no eviction
     expect(s.size).toBe(2);
     expect(s.has(2)).toBe(true);
@@ -248,7 +271,10 @@ describe("reserveCredits", () => {
 
   it("returns false for preview teams", async () => {
     const svc = makeService();
-    const result = await svc.reserveCredits({ teamId: "preview_abc", value: 10 });
+    const result = await svc.reserveCredits({
+      teamId: "preview_abc",
+      value: 10,
+    });
     expect(result).toBe(false);
     expect(mockTrack).not.toHaveBeenCalled();
   });
@@ -299,5 +325,61 @@ describe("refundCredits", () => {
     const svc = makeService();
     await svc.refundCredits({ teamId: "preview_abc", value: 30 });
     expect(mockTrack).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isAutumnEnabled / experiment gating
+// ---------------------------------------------------------------------------
+
+describe("isAutumnEnabled", () => {
+  afterEach(() => {
+    // Restore defaults for other tests.
+    (config as any).AUTUMN_EXPERIMENT = "true";
+    (config as any).AUTUMN_EXPERIMENT_PERCENT = 100;
+  });
+
+  it("returns true when experiment is enabled and percent is 100", () => {
+    expect(isAutumnEnabled()).toBe(true);
+  });
+
+  it("returns false when AUTUMN_EXPERIMENT is not 'true'", () => {
+    (config as any).AUTUMN_EXPERIMENT = undefined;
+    expect(isAutumnEnabled()).toBe(false);
+  });
+
+  it("returns false when AUTUMN_EXPERIMENT_PERCENT is 0", () => {
+    (config as any).AUTUMN_EXPERIMENT_PERCENT = 0;
+    expect(isAutumnEnabled()).toBe(false);
+  });
+});
+
+describe("experiment gate on public methods", () => {
+  afterEach(() => {
+    (config as any).AUTUMN_EXPERIMENT = "true";
+    (config as any).AUTUMN_EXPERIMENT_PERCENT = 100;
+  });
+
+  it("reserveCredits returns false when experiment is disabled", async () => {
+    (config as any).AUTUMN_EXPERIMENT = undefined;
+    const svc = makeService();
+    const result = await svc.reserveCredits({ teamId: "team-1", value: 10 });
+    expect(result).toBe(false);
+    expect(mockTrack).not.toHaveBeenCalled();
+  });
+
+  it("refundCredits is a no-op when experiment is disabled", async () => {
+    (config as any).AUTUMN_EXPERIMENT = undefined;
+    const svc = makeService();
+    await svc.refundCredits({ teamId: "team-1", value: 10 });
+    expect(mockTrack).not.toHaveBeenCalled();
+  });
+
+  it("ensureTeamProvisioned is a no-op when experiment is disabled", async () => {
+    (config as any).AUTUMN_EXPERIMENT = undefined;
+    const svc = makeService();
+    await svc.ensureTeamProvisioned({ teamId: "team-1", orgId: "org-1" });
+    expect(mockGetOrCreate).not.toHaveBeenCalled();
+    expect(mockEntityGet).not.toHaveBeenCalled();
   });
 });
