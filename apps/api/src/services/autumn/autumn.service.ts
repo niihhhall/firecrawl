@@ -258,6 +258,7 @@ export class AutumnService {
     orgId,
     name,
   }: EnsureTeamProvisionedParams): Promise<void> {
+    if (!autumnClient) return;
     if (this.isPreviewTeam(teamId)) return;
     // Fast path: team is already fully provisioned.
     if (this.ensuredTeams.has(teamId)) return;
