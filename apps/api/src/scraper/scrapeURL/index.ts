@@ -434,14 +434,21 @@ async function scrapeURLLoopIter(
     // NOTE: TODO: what to do when status code is bad is tough...
     // we cannot just rely on text because error messages can be brief and not hit the limit
     // should we just use all the fallbacks and pick the one with the longest text? - mogery
-    if (isLongEnough || !isGoodStatusCode) {
+
+    // When screenshot format is requested and we got screenshot data back,
+    // consider the scrape successful even if HTML content is empty.
+    const hasScreenshotData =
+      hasFormatOfType(meta.options.formats, "screenshot") !== undefined &&
+      !!engineResult.screenshot;
+
+    if (isLongEnough || !isGoodStatusCode || hasScreenshotData) {
       meta.logger.info("Scrape via " + engine + " deemed successful.", {
-        factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+        factors: { isLongEnough, isGoodStatusCode, hasNoPageError, hasScreenshotData },
       });
       return engineResult;
     } else {
       meta.logger.warn("Scrape via " + engine + " deemed unsuccessful.", {
-        factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+        factors: { isLongEnough, isGoodStatusCode, hasNoPageError, hasScreenshotData },
         length: engineResult.html?.trim().length ?? 0,
       });
       throw new EngineUnsuccessfulError(engine);

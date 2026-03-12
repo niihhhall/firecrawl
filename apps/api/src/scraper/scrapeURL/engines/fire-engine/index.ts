@@ -322,8 +322,11 @@ export async function scrapeURLWithFireEngineChromeCDP(
       0,
     );
 
+    const hasScreenshotFormat =
+      hasFormatOfType(meta.options.formats, "screenshot") !== undefined;
     const shouldAllowMedia =
-      hasFormatOfType(meta.options.formats, "branding") ||
+      hasScreenshotFormat ||
+      hasBranding ||
       youtubePostprocessor.shouldRun(
         meta,
         new URL(meta.rewrittenUrl ?? meta.url),
@@ -617,12 +620,19 @@ export function fireEngineMaxReasonableTime(
   } else if (engine === "playwright") {
     return (meta.options.waitFor ?? 0) + 30000;
   } else {
+    // Account for format-appended actions (screenshot, branding) that are added
+    // to the actions array sent to fire-engine but aren't in meta.options.actions
+    const hasScreenshotFormat =
+      hasFormatOfType(meta.options.formats, "screenshot") !== undefined;
+    const formatActionsTime = (hasScreenshotFormat ? 5000 : 0) +
+      (hasBranding ? 250 : 0);
     return (
       effectiveWait +
       (meta.options.actions?.reduce(
         (a, x) => (x.type === "wait" ? (x.milliseconds ?? 2500) + a : 250 + a),
         0,
       ) ?? 0) +
+      formatActionsTime +
       30000
     );
   }
