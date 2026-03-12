@@ -1012,3 +1012,9 @@ fn remove_skip_to_content_links(input: &str) -> String {
 
   out
 }
+
+/// Convert HTML to Markdown using the SIMD-accelerated converter.
+#[napi]
+pub fn convert_html_to_markdown_simd(html: String) -> napi::Result<String> {
+  Ok(simd_html_to_md::html_to_md(&html))
+}

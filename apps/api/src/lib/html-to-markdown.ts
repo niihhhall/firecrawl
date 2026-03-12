@@ -7,7 +7,7 @@ import type { Logger } from "winston";
 import { stat } from "fs/promises";
 import { HTML_TO_MARKDOWN_PATH } from "../natives";
 import { convertHTMLToMarkdownWithHttpService } from "./html-to-markdown-client";
-import { postProcessMarkdown } from "@mendable/firecrawl-rs";
+import { postProcessMarkdown, convertHtmlToMarkdownSimd } from "@mendable/firecrawl-rs";
 
 // TODO: add a timeout to the Go parser
 
@@ -51,6 +51,65 @@ class GoMarkdownConverter {
   }
 }
 
+function shadowSimdConversion(
+  html: string,
+  goResult: string,
+  contextLogger: Logger,
+  requestId?: string,
+) {
+  try {
+    const start = performance.now();
+    const simdResult = convertHtmlToMarkdownSimd(html);
+    const durationMs = performance.now() - start;
+
+    const match = simdResult === goResult;
+    const htmlLen = html.length;
+    const goLen = goResult.length;
+    const simdLen = simdResult.length;
+
+    if (match) {
+      contextLogger.info("simd-shadow: match", {
+        module: "html-to-markdown",
+        shadow: true,
+        match: true,
+        durationMs: Math.round(durationMs * 100) / 100,
+        htmlLen,
+        goLen,
+        simdLen,
+        ...(requestId ? { requestId } : {}),
+      });
+    } else {
+      // Find first differing position for debugging
+      let diffPos = 0;
+      const minLen = Math.min(goLen, simdLen);
+      while (diffPos < minLen && goResult[diffPos] === simdResult[diffPos]) {
+        diffPos++;
+      }
+
+      contextLogger.info("simd-shadow: mismatch", {
+        module: "html-to-markdown",
+        shadow: true,
+        match: false,
+        durationMs: Math.round(durationMs * 100) / 100,
+        htmlLen,
+        goLen,
+        simdLen,
+        diffPos,
+        goSnippet: goResult.slice(Math.max(0, diffPos - 20), diffPos + 80),
+        simdSnippet: simdResult.slice(Math.max(0, diffPos - 20), diffPos + 80),
+        ...(requestId ? { requestId } : {}),
+      });
+    }
+  } catch (error) {
+    contextLogger.error("simd-shadow: error", {
+      module: "html-to-markdown",
+      shadow: true,
+      error: error instanceof Error ? error.message : String(error),
+      ...(requestId ? { requestId } : {}),
+    });
+  }
+}
+
 export async function parseMarkdown(
   html: string | null | undefined,
   context?: {
@@ -73,6 +132,7 @@ export async function parseMarkdown(
         requestId,
       });
       markdownContent = await postProcessMarkdown(markdownContent);
+      setImmediate(() => shadowSimdConversion(html, markdownContent, contextLogger, requestId));
       return markdownContent;
     } catch (error) {
       contextLogger.error(
@@ -93,6 +153,7 @@ export async function parseMarkdown(
       const converter = await GoMarkdownConverter.getInstance();
       let markdownContent = await converter.convertHTMLToMarkdown(html);
       markdownContent = await postProcessMarkdown(markdownContent);
+      setImmediate(() => shadowSimdConversion(html, markdownContent, contextLogger, requestId));
       return markdownContent;
     }
   } catch (error) {
@@ -141,7 +202,7 @@ export async function parseMarkdown(
   try {
     let markdownContent = await turndownService.turndown(html);
     markdownContent = await postProcessMarkdown(markdownContent);
-
+    setImmediate(() => shadowSimdConversion(html, markdownContent, contextLogger, requestId));
     return markdownContent;
   } catch (error) {
     contextLogger.error("Error converting HTML to Markdown", { error });
