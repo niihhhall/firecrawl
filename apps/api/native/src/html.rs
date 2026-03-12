@@ -1014,7 +1014,16 @@ fn remove_skip_to_content_links(input: &str) -> String {
 }
 
 /// Convert HTML to Markdown using the SIMD-accelerated converter.
+/// Runs on the tokio thread pool to avoid blocking the Node.js event loop
+/// on large documents.
 #[napi]
-pub fn convert_html_to_markdown_simd(html: String) -> napi::Result<String> {
-  Ok(simd_html_to_md::html_to_md(&html))
+pub async fn convert_html_to_markdown_simd(html: String) -> napi::Result<String> {
+  task::spawn_blocking(move || simd_html_to_md::html_to_md(&html))
+    .await
+    .map_err(|e| {
+      napi::Error::new(
+        napi::Status::GenericFailure,
+        format!("convert_html_to_markdown_simd join error: {e}"),
+      )
+    })
 }

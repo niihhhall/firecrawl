@@ -41,7 +41,7 @@ function countStructure(md: string) {
   };
 }
 
-export function shadowSimdConversion(
+export async function shadowSimdConversion(
   html: string,
   goResult: string,
   contextLogger: Logger,
@@ -49,7 +49,7 @@ export function shadowSimdConversion(
 ) {
   try {
     const start = performance.now();
-    const simdResult = convertHtmlToMarkdownSimd(html);
+    const simdResult = await convertHtmlToMarkdownSimd(html);
     const durationMs = performance.now() - start;
 
     // Word coverage: are all content words from Go present in SIMD?
