@@ -90,7 +90,9 @@ async function getAccessToken(
 
 function clearCachedToken(logger: Meta["logger"]): void {
   try {
-    getRedisConnection().del(REDIS_TOKEN_KEY).catch(() => {});
+    getRedisConnection().del(REDIS_TOKEN_KEY).catch((error) => {
+      logger.warn("Failed to clear Wikipedia token from Redis", { error });
+    });
   } catch {
     logger.warn("Failed to clear Wikipedia token from Redis");
   }
