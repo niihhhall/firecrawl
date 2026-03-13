@@ -238,9 +238,7 @@ fn _extract_metadata(
     .select("meta")
     .map_err(|_| "Failed to select meta")?
   {
-    let Some(meta) = meta.as_node().as_element() else {
-      continue;
-    };
+    let meta = meta.as_node().as_element().unwrap();
     let attrs = meta.attributes.borrow();
 
     if let Some(name) = attrs
@@ -464,7 +462,7 @@ fn _transform_html_inner(
 
       let modes = signatures
         .iter()
-        .filter_map(|x| x.split(':').nth(1).map(|s| Into::<SignatureMode>::into(s.to_string())))
+        .map(|x| Into::<SignatureMode>::into(x.split(':').nth(1).unwrap().to_string()))
         .collect::<HashSet<_>>();
 
       for mode in modes {
@@ -996,23 +994,18 @@ fn remove_skip_to_content_links(input: &str) -> String {
           let mut j = label_end + 3;
 
           while j < len {
-            if let Some(ch) = input[j..].chars().next() {
-              if ch == ')' {
-                i = j + ch.len_utf8();
-                continue 'outer;
-              }
-              j += ch.len_utf8();
-            } else {
-              break;
+            let ch = input[j..].chars().next().unwrap();
+            if ch == ')' {
+              i = j + ch.len_utf8();
+              continue 'outer;
             }
+            j += ch.len_utf8();
           }
         }
       }
     }
 
-    let Some(ch) = input[i..].chars().next() else {
-      break;
-    };
+    let ch = input[i..].chars().next().unwrap();
     out.push(ch);
     i += ch.len_utf8();
   }

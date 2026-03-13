@@ -7,7 +7,7 @@ pub use crate::logging::*;
 pub use crate::pdf::*;
 pub use crate::utils::*;
 
-pub use crate::document::{DocumentConvertResult, DocumentConverter, DocumentType};
+pub use crate::document::{DocumentConverter, DocumentType};
 
 mod crawler;
 mod document;
