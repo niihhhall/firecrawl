@@ -18,14 +18,15 @@ Usage:
 Check example.py for other usage examples.
 """
 
-from typing import Any, Dict, Optional, List, Union
+from pathlib import Path
+from typing import Any, Dict, Optional, List, Union, BinaryIO
 import logging
 
 
 from .v1 import V1FirecrawlApp, AsyncV1FirecrawlApp
 from .v2 import FirecrawlClient as V2FirecrawlClient
 from .v2.client_async import AsyncFirecrawlClient
-from .v2.types import Document
+from .v2.types import Document, ScrapeOptions
 
 logger = logging.getLogger("firecrawl")
 
@@ -279,6 +280,22 @@ class Firecrawl:
         self.list_browsers = self._v2_client.list_browsers
         
         self.watcher = self._v2_client.watcher
+
+    def parse(
+        self,
+        file: Union[str, Path, bytes, bytearray, BinaryIO],
+        *,
+        filename: Optional[str] = None,
+        content_type: Optional[str] = None,
+        options: Optional[ScrapeOptions] = None,
+    ) -> Document:
+        """Parse an uploaded file via the v2 parse endpoint."""
+        return self._v2_client.parse(
+            file,
+            filename=filename,
+            content_type=content_type,
+            options=options,
+        )
         
 class AsyncFirecrawl:
     """Async unified Firecrawl client (v2 by default, v1 under ``.v1``)."""
@@ -356,6 +373,22 @@ class AsyncFirecrawl:
         self.list_browsers = self._v2_client.list_browsers
 
         self.watcher = self._v2_client.watcher
+
+    async def parse(
+        self,
+        file: Union[str, Path, bytes, bytearray, BinaryIO],
+        *,
+        filename: Optional[str] = None,
+        content_type: Optional[str] = None,
+        options: Optional[ScrapeOptions] = None,
+    ) -> Document:
+        """Parse an uploaded file via the v2 parse endpoint."""
+        return await self._v2_client.parse(
+            file,
+            filename=filename,
+            content_type=content_type,
+            options=options,
+        )
 
 # Export Firecrawl as an alias for FirecrawlApp
 FirecrawlApp = Firecrawl
