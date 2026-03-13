@@ -52,6 +52,14 @@ beforeAll(async () => {
 
 describe("Scrape tests", () => {
   const base = TEST_SUITE_WEBSITE;
+  const createLocaltestMeUrl = () => {
+    const target = new URL(TEST_SUITE_WEBSITE);
+    if (target.hostname === "127.0.0.1" || target.hostname === "localhost") {
+      target.hostname = "localtest.me";
+    }
+    target.searchParams.set("testId", crypto.randomUUID());
+    return target.toString();
+  };
 
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "works",
@@ -274,6 +282,50 @@ describe("Scrape tests", () => {
 
       expect(response.markdown?.trim()).toContain(
         config.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
+      );
+    },
+    scrapeTimeout,
+  );
+
+  concurrentIf(
+    TEST_SELF_HOST &&
+      HAS_PLAYWRIGHT &&
+      ALLOW_TEST_SUITE_WEBSITE &&
+      !!config.ALLOW_LOCAL_WEBHOOKS,
+  )(
+    "playwright allows local-network targets when ALLOW_LOCAL_WEBHOOKS is enabled",
+    async () => {
+      const response = await scrape(
+        {
+          url: createLocaltestMeUrl(),
+          waitFor: 100,
+        },
+        identity,
+      );
+
+      expect(response.markdown).toContain("Firecrawl");
+    },
+    scrapeTimeout,
+  );
+
+  concurrentIf(
+    TEST_SELF_HOST && HAS_PLAYWRIGHT && !config.ALLOW_LOCAL_WEBHOOKS,
+  )(
+    "playwright blocks local-network targets resolved via DNS",
+    async () => {
+      const raw = await scrapeRaw(
+        {
+          url: createLocaltestMeUrl(),
+          waitFor: 100,
+        },
+        identity,
+      );
+
+      expect(raw.statusCode).toBe(200);
+      expect(raw.body.success).toBe(true);
+      expect(raw.body.data?.metadata?.statusCode).toBe(403);
+      expect(raw.body.data?.metadata?.error).toContain(
+        "Blocked insecure target URL",
       );
     },
     scrapeTimeout,
