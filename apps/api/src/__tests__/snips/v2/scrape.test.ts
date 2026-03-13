@@ -52,11 +52,11 @@ beforeAll(async () => {
 
 describe("Scrape tests", () => {
   const base = TEST_SUITE_WEBSITE;
+  const playwrightAllowsLocalTargets =
+    (process.env.ALLOW_LOCAL_WEBHOOKS ?? "").toLowerCase() === "true";
   const createLocaltestMeUrl = () => {
     const target = new URL(TEST_SUITE_WEBSITE);
-    if (target.hostname === "127.0.0.1" || target.hostname === "localhost") {
-      target.hostname = "localtest.me";
-    }
+    target.hostname = "localtest.me";
     target.searchParams.set("testId", crypto.randomUUID());
     return target.toString();
   };
@@ -291,7 +291,7 @@ describe("Scrape tests", () => {
     TEST_SELF_HOST &&
       HAS_PLAYWRIGHT &&
       ALLOW_TEST_SUITE_WEBSITE &&
-      !!config.ALLOW_LOCAL_WEBHOOKS,
+      playwrightAllowsLocalTargets,
   )(
     "playwright allows local-network targets when ALLOW_LOCAL_WEBHOOKS is enabled",
     async () => {
@@ -309,7 +309,7 @@ describe("Scrape tests", () => {
   );
 
   concurrentIf(
-    TEST_SELF_HOST && HAS_PLAYWRIGHT && !config.ALLOW_LOCAL_WEBHOOKS,
+    TEST_SELF_HOST && HAS_PLAYWRIGHT && !playwrightAllowsLocalTargets,
   )(
     "playwright blocks local-network targets resolved via DNS",
     async () => {

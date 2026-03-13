@@ -49,18 +49,13 @@ const lookupWithCache = async (hostname: string): Promise<string[]> => {
     return cached.addresses;
   }
 
-  try {
-    const resolvedAddresses = await lookup(hostname, { all: true, verbatim: true });
-    const uniqueAddresses = [...new Set(resolvedAddresses.map(x => x.address))];
-    dnsLookupCache.set(hostname, {
-      addresses: uniqueAddresses,
-      expiresAt: Date.now() + DNS_CACHE_TTL_MS,
-    });
-    return uniqueAddresses;
-  } catch (error) {
-    console.warn(`DNS lookup failed for ${hostname}:`, error);
-    return [];
-  }
+  const resolvedAddresses = await lookup(hostname, { all: true, verbatim: true });
+  const uniqueAddresses = [...new Set(resolvedAddresses.map(x => x.address))];
+  dnsLookupCache.set(hostname, {
+    addresses: uniqueAddresses,
+    expiresAt: Date.now() + DNS_CACHE_TTL_MS,
+  });
+  return uniqueAddresses;
 };
 
 const assertSafeTargetUrl = async (urlString: string): Promise<void> => {
@@ -95,7 +90,24 @@ const assertSafeTargetUrl = async (urlString: string): Promise<void> => {
     return;
   }
 
-  const resolvedAddresses = await lookupWithCache(hostname);
+  let resolvedAddresses: string[];
+  try {
+    resolvedAddresses = await lookupWithCache(hostname);
+  } catch (error) {
+    console.warn(`DNS lookup failed for ${hostname}:`, error);
+    throw new InsecureConnectionError(
+      urlString,
+      `DNS lookup failed for "${hostname}", cannot verify target is safe`,
+    );
+  }
+
+  if (resolvedAddresses.length === 0) {
+    throw new InsecureConnectionError(
+      urlString,
+      `hostname "${hostname}" did not resolve to any IP address`,
+    );
+  }
+
   if (resolvedAddresses.some(address => isIPPrivate(address))) {
     throw new InsecureConnectionError(urlString, `hostname "${hostname}" resolves to a private IP`);
   }
