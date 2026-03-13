@@ -237,30 +237,41 @@ jobs:
           echo "|-------|----------|--------|------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| ${TESTS:-0} | ${FAILURES:-0} | ${ERRORS:-0} | ${TIME:-?}s |" >> "$GITHUB_STEP_SUMMARY"
 
-          # List failed tests
-          FAILED_TESTS=$(python3 -c "
+          # Generate detailed report
+          python3 -c "
           import xml.etree.ElementTree as ET
           tree = ET.parse('$JUNIT')
-          failures = []
+          failed = []
+          passed = []
           for tc in tree.iter('testcase'):
+              name = tc.get('name', 'unknown')
+              suite = tc.get('classname', '')
+              time = tc.get('time', '?')
               fail = tc.find('failure') or tc.find('error')
               if fail is not None:
-                  name = tc.get('name', 'unknown')
-                  suite = tc.get('classname', '')
                   msg = (fail.get('message') or fail.text or '')[:200]
-                  failures.append((suite, name, msg))
-          if failures:
-              print('\n### Failed tests\n')
-              for suite, name, msg in failures:
-                  print(f'- **{suite}** › {name}')
+                  failed.append((suite, name, time, msg))
+              else:
+                  passed.append((suite, name, time))
+          lines = []
+          if failed:
+              lines.append('\n### Failed tests\n')
+              lines.append('| Suite | Test | Time |')
+              lines.append('|-------|------|------|')
+              for suite, name, time, msg in failed:
+                  lines.append(f'| {suite} | **{name}** | {time}s |')
                   if msg:
-                      print(f'  > {msg}')
-                  print()
-          " 2>/dev/null || true)
-
-          if [ -n "$FAILED_TESTS" ]; then
-            echo "$FAILED_TESTS" >> "$GITHUB_STEP_SUMMARY"
-          fi
+                      lines.append(f'| | > {msg} | |')
+              lines.append('')
+          lines.append('\n### All tests\n')
+          lines.append('| Status | Suite | Test | Time |')
+          lines.append('|--------|-------|------|------|')
+          for suite, name, time, msg in failed:
+              lines.append(f'| ❌ | {suite} | {name} | {time}s |')
+          for suite, name, time in passed:
+              lines.append(f'| ✅ | {suite} | {name} | {time}s |')
+          print('\n'.join(lines))
+          " >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
           # Fail the step if there were test failures
           if [ "${FAILURES:-0}" != "0" ] || [ "${ERRORS:-0}" != "0" ]; then
