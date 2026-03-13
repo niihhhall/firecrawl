@@ -25,14 +25,14 @@ export function extractAndEmitNativeLogs(
   if (idx === -1) return;
 
   const logsJson = error.message.slice(idx + NATIVE_LOGS_SEPARATOR.length);
-  // Clean the error message so Sentry gets a readable string
-  error.message = error.message.slice(0, idx);
 
   try {
     const logs: NativeLogEntry[] = JSON.parse(logsJson);
+    // Only strip after successful parse so we don't lose data on failure
+    error.message = error.message.slice(0, idx);
     emitNativeLogs(logs, parentLogger, module);
   } catch {
-    // JSON parse failed — leave the original error as-is
+    // JSON parse failed — leave the original error message intact
   }
 }
 
