@@ -234,8 +234,14 @@ jobs:
                   f.write(f"## ⚠️ No test report\njunit.xml was not generated. Tests likely crashed before completing.\n")
               sys.exit(0)
 
-          tree = ET.parse(junit)
-          root = tree.getroot()
+          try:
+              tree = ET.parse(junit)
+              root = tree.getroot()
+          except ET.ParseError as e:
+              print(f"::warning::junit.xml is malformed: {e}")
+              with open(summary, "a") as f:
+                  f.write(f"## ⚠️ Malformed test report\njunit.xml could not be parsed (tests may have crashed mid-run): `{e}`\n")
+              sys.exit(1)
 
           # Get summary counts from the root testsuites/testsuite element
           top = root if root.tag == "testsuites" else root
