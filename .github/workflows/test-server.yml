@@ -243,11 +243,8 @@ jobs:
                   f.write(f"## ⚠️ Malformed test report\njunit.xml could not be parsed (tests may have crashed mid-run): `{e}`\n")
               sys.exit(1)
 
-          # Get summary counts from the root testsuites/testsuite element
+          # Get total time from root element
           top = root if root.tag == "testsuites" else root
-          tests = top.get("tests", "0")
-          failures = top.get("failures", "0")
-          errors = top.get("errors", "0")
           time_s = top.get("time", "?")
 
           failed = []
@@ -269,6 +266,10 @@ jobs:
               else:
                   passed.append((suite, name, t))
 
+          # Derive counts from parsed testcases (root attributes can be unreliable)
+          tests = len(failed) + len(passed) + len(skipped)
+          failures = len(failed)
+
           def log(line):
               print(line)
 
@@ -276,7 +277,7 @@ jobs:
               f.write(line + "\n")
 
           # Print plain text to step log
-          log(f"Test Report ({label}): {tests} tests, {failures} failures, {errors} errors, {time_s}s")
+          log(f"Test Report ({label}): {tests} tests, {failures} failures, {time_s}s")
           if failed:
               log("")
               log("Failed tests:")
@@ -295,11 +296,11 @@ jobs:
 
           # Write markdown tables to step summary
           with open(summary, "a") as f:
-              status = "❌" if int(failures) > 0 or int(errors) > 0 else "✅"
+              status = "❌" if failures > 0 else "✅"
               md(f"## {status} Test Report ({label})", f)
-              md("| 🧪 Tests | ❌ Failures | 💥 Errors | ⏱️ Time |", f)
-              md("|----------|------------|----------|---------|", f)
-              md(f"| {tests} | {failures} | {errors} | {time_s}s |", f)
+              md("| 🧪 Tests | ❌ Failures | ⏭️ Skipped | ⏱️ Time |", f)
+              md("|----------|------------|-----------|---------|", f)
+              md(f"| {tests} | {failures} | {len(skipped)} | {time_s}s |", f)
               md("", f)
 
               if failed:
@@ -325,8 +326,8 @@ jobs:
               md("", f)
               md("</details>", f)
 
-          if int(failures) > 0 or int(errors) > 0:
-              print(f"::error::{failures} failure(s), {errors} error(s)")
+          if failures > 0:
+              print(f"::error::{failures} failure(s)")
               sys.exit(1)
 
       - name: Copy log files
