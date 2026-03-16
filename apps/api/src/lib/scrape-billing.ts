@@ -2,7 +2,6 @@ import { InternalOptions } from "../scraper/scrapeURL";
 import {
   Document,
   ScrapeOptions,
-  TeamFlags,
   shouldParsePDF,
 } from "../controllers/v2/types";
 import { CostTracking } from "./cost-tracking";
@@ -18,7 +17,6 @@ export async function calculateCreditsToBeBilled(
   internalOptions: InternalOptions,
   document: Document | null,
   costTracking: CostTracking | ReturnType<typeof CostTracking.prototype.toJSON>,
-  flags: TeamFlags,
   error?: Error | null,
   unsupportedFeatures?: Set<FeatureFlag>,
 ) {
@@ -71,7 +69,7 @@ export async function calculateCreditsToBeBilled(
   }
 
   if (internalOptions.zeroDataRetention) {
-    creditsToBeBilled += flags?.zdrCost ?? 1;
+    creditsToBeBilled += 1;
   }
 
   const shouldParse = shouldParsePDF(options.parsers);

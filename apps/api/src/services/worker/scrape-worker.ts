@@ -106,7 +106,6 @@ async function billScrapeJob(
       job.data.internalOptions,
       document,
       costTracking,
-      flags,
       error,
       unsupportedFeatures,
     );

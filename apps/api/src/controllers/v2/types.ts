@@ -1289,7 +1289,6 @@ export type TeamFlags = {
   allowZDR?: boolean;
   scrapeZDR?: "disabled" | "allowed" | "forced";
   searchZDR?: "disabled" | "allowed" | "forced";
-  zdrCost?: number;
   checkRobotsOnScrape?: boolean;
   crawlTtlHours?: number;
   ipWhitelist?: boolean;
