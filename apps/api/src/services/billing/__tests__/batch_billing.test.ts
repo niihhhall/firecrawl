@@ -197,4 +197,38 @@ describe("processBillingBatch", () => {
     });
     expect(captureException).toHaveBeenCalled();
   });
+
+  it("continues processing later groups when Autumn refund fails", async () => {
+    queue = [
+      makeOp({
+        team_id: "team-1",
+        subscription_id: "sub-1",
+        autumnTrackInRequest: true,
+      }),
+      makeOp({
+        team_id: "team-2",
+        subscription_id: "sub-2",
+        autumnTrackInRequest: false,
+      }),
+    ];
+    rpc
+      .mockResolvedValueOnce({ data: null, error: new Error("db failed") })
+      .mockResolvedValueOnce({ data: [], error: null });
+    refundCredits.mockRejectedValueOnce(new Error("refund failed"));
+
+    await processBillingBatch();
+
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(trackCredits).toHaveBeenCalledWith({
+      teamId: "team-2",
+      value: 10,
+      properties: {
+        source: "processBillingBatch",
+        endpoint: "extract",
+        apiKeyId: 123,
+        subscriptionId: "sub-2",
+      },
+    });
+    expect(captureException).toHaveBeenCalled();
+  });
 });

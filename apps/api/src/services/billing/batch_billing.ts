@@ -70,16 +70,32 @@ async function refundRequestTrackedCredits(group: GroupedBillingOperation) {
 
   if (requestTrackedCredits <= 0) return;
 
-  await autumnService.refundCredits({
-    teamId: group.team_id,
-    value: requestTrackedCredits,
-    properties: {
-      source: "processBillingBatch",
-      ...toAutumnBillingProperties(group.billing),
-      apiKeyId: group.api_key_id,
-      subscriptionId: group.subscription_id,
-    },
-  });
+  try {
+    await autumnService.refundCredits({
+      teamId: group.team_id,
+      value: requestTrackedCredits,
+      properties: {
+        source: "processBillingBatch",
+        ...toAutumnBillingProperties(group.billing),
+        apiKeyId: group.api_key_id,
+        subscriptionId: group.subscription_id,
+      },
+    });
+  } catch (error) {
+    logger.warn("Failed to refund Autumn request-tracked credits", {
+      error,
+      team_id: group.team_id,
+      credits: requestTrackedCredits,
+      billing: group.billing,
+    });
+    Sentry.captureException(error, {
+      data: {
+        operation: "batch_billing_refund",
+        team_id: group.team_id,
+        credits: requestTrackedCredits,
+      },
+    });
+  }
 }
 
 /**

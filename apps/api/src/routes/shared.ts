@@ -122,12 +122,13 @@ export function checkCreditsMiddleware(
       const requestedCredits = minimum ?? 1;
       const useAutumnCheck =
         isAutumnCheckEnabled() && !req.acuc?.is_extract;
-      let { success, remainingCredits, chunk } = await checkTeamCredits(
+      const legacyCheck = await checkTeamCredits(
         req.acuc ?? null,
         req.auth.team_id,
         requestedCredits,
-        { sideEffects: !useAutumnCheck },
+        { runSideEffects: !useAutumnCheck },
       );
+      let { success, remainingCredits, chunk } = legacyCheck;
 
       const autumnProperties = {
         source: "checkCreditsMiddleware",
@@ -145,21 +146,20 @@ export function checkCreditsMiddleware(
             req.acuc ?? null,
             req.auth.team_id,
             requestedCredits,
+            { runSideEffects: true },
           ));
         } else {
-          if (autumnAllowed !== success) {
+          if (autumnAllowed !== legacyCheck.success) {
             logger.warn("Autumn check result diverged from legacy credit gate", {
               teamId: req.auth.team_id,
               path: req.path,
               requestedCredits,
               autumnAllowed,
-              legacyAllowed: success,
+              legacyAllowed: legacyCheck.success,
             });
           }
           success = autumnAllowed;
-          if (autumnAllowed) {
-            remainingCredits = Math.max(remainingCredits, requestedCredits);
-          }
+          remainingCredits = legacyCheck.remainingCredits;
         }
       }
 
