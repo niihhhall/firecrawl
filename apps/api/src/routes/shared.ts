@@ -10,9 +10,7 @@ import { RateLimiterMode } from "../types";
 import { authenticateUser } from "../controllers/auth";
 import { createIdempotencyKey } from "../services/idempotency/create";
 import { validateIdempotencyKey } from "../services/idempotency/validate";
-import {
-  checkTeamCredits,
-} from "../services/billing/credit_billing";
+import { checkTeamCredits } from "../services/billing/credit_billing";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { logger } from "../lib/logger";
 import {
@@ -126,37 +124,35 @@ export function checkCreditsMiddleware(
         !!req.auth.org_id &&
         isAutumnCheckEnabled(req.auth.org_id) &&
         !req.acuc?.is_extract;
-      const legacyCheck = await checkTeamCredits(
-        req.acuc ?? null,
-        req.auth.team_id,
-        requestedCredits,
-      );
-      let { success, remainingCredits, chunk } = legacyCheck;
 
       const autumnProperties = {
         source: "checkCreditsMiddleware",
         path: req.path,
       };
-      if (useAutumnCheck) {
-        const autumnAllowed = await autumnService.checkCredits({
-          teamId: req.auth.team_id,
-          value: requestedCredits,
-          properties: autumnProperties,
-        });
-
-        if (autumnAllowed !== null) {
-          if (autumnAllowed !== legacyCheck.success) {
-            logger.warn("Autumn check result diverged from legacy credit gate", {
+      const [legacyCheck, autumnAllowed] = await Promise.all([
+        checkTeamCredits(req.acuc ?? null, req.auth.team_id, requestedCredits),
+        useAutumnCheck
+          ? autumnService.checkCredits({
               teamId: req.auth.team_id,
-              path: req.path,
-              requestedCredits,
-              autumnAllowed,
-              legacyAllowed: legacyCheck.success,
-            });
-          }
-          success = autumnAllowed;
-          remainingCredits = legacyCheck.remainingCredits;
+              value: requestedCredits,
+              properties: autumnProperties,
+            })
+          : null,
+      ]);
+      let { success, remainingCredits, chunk } = legacyCheck;
+
+      if (autumnAllowed !== null) {
+        if (autumnAllowed !== legacyCheck.success) {
+          logger.warn("Autumn check result diverged from legacy credit gate", {
+            teamId: req.auth.team_id,
+            path: req.path,
+            requestedCredits,
+            autumnAllowed,
+            legacyAllowed: legacyCheck.success,
+          });
         }
+        success = autumnAllowed;
+        remainingCredits = legacyCheck.remainingCredits;
       }
 
       if (chunk) {

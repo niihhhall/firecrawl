@@ -354,7 +354,11 @@ export class AutumnService {
     value,
     properties,
   }: TrackCreditsParams): Promise<boolean | null> {
-    if (!isAutumnCheckEnabled() || !autumnClient || this.isPreviewTeam(teamId)) {
+    if (
+      !isAutumnCheckEnabled() ||
+      !autumnClient ||
+      this.isPreviewTeam(teamId)
+    ) {
       return null;
     }
 
@@ -371,7 +375,7 @@ export class AutumnService {
         properties,
       });
 
-      logger.info("Autumn checkCredits completed", {
+      logger.debug("Autumn checkCredits completed", {
         customerId,
         entityId: teamId,
         featureId: CREDITS_FEATURE_ID,
