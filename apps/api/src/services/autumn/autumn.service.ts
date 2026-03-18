@@ -20,6 +20,14 @@ const TEAM_FEATURE_ID = "TEAM";
 const CREDITS_FEATURE_ID = "CREDITS";
 
 /**
+ * Org IDs that always have Autumn enabled, regardless of experiment
+ * percentage or feature flags.
+ */
+const AUTUMN_BYPASS_ORG_IDS = new Set([
+  "318e9dfd-9d76-489d-86fa-64bcbc3682f9", // Autumn (ayush@useautumn.com)
+]);
+
+/**
  * Deterministic bucket for an org UUID.
  *
  * Takes the first 8 hex digits of the id (after stripping dashes) and maps
@@ -45,12 +53,14 @@ export function orgBucket(orgId: string): number {
  * `ensureTeamProvisioned`.
  */
 export function isAutumnEnabled(orgId?: string): boolean {
+  if (orgId && AUTUMN_BYPASS_ORG_IDS.has(orgId)) return true;
   if (config.AUTUMN_EXPERIMENT !== "true") return false;
   if (!orgId || config.AUTUMN_EXPERIMENT_PERCENT >= 100) return true;
   return orgBucket(orgId) < config.AUTUMN_EXPERIMENT_PERCENT;
 }
 
 export function isAutumnCheckEnabled(orgId?: string): boolean {
+  if (orgId && AUTUMN_BYPASS_ORG_IDS.has(orgId)) return true;
   if (config.AUTUMN_CHECK_ENABLED !== "true") return false;
   if (config.AUTUMN_EXPERIMENT !== "true") return false;
   const percent = config.AUTUMN_CHECK_EXPERIMENT_PERCENT ?? 100;
@@ -67,6 +77,7 @@ export function isAutumnCheckDryRun(): boolean {
 }
 
 export function isAutumnRequestTrackEnabled(orgId?: string): boolean {
+  if (orgId && AUTUMN_BYPASS_ORG_IDS.has(orgId)) return true;
   if (config.AUTUMN_REQUEST_TRACK_EXPERIMENT !== "true") return false;
   if (!isAutumnEnabled(orgId)) return false;
   if (!orgId || config.AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT >= 100) {
