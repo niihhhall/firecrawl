@@ -4168,8 +4168,7 @@
             "type": "object",
             "properties": {
               "success": {
-                "type": "boolean",
-                "const": true
+                "type": "boolean"
               },
               "status": {
                 "type": "string",
@@ -4182,6 +4181,13 @@
               "steps": {},
               "llmUsage": {},
               "sources": {},
+              "costTracking": {},
+              "sessionIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "tokensUsed": {
                 "type": "number"
               },
@@ -4690,7 +4696,9 @@
           "streamWebView": {
             "type": "boolean"
           },
-          "integration": {},
+          "integration": {
+            "type": "string"
+          },
           "profile": {
             "type": "object",
             "properties": {
@@ -5960,6 +5968,40 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BrowserDeleteResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x402/search": {
+      "post": {
+        "tags": ["Search"],
+        "operationId": "X402 Search",
+        "description": "Search endpoint with micropayment via X402 protocol. Only available when X402 is enabled on the server.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/X402SearchResponse"
                 }
               }
             }

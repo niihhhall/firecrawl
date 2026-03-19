@@ -11,6 +11,7 @@ import {
   scrapeRequestSchema,
   searchRequestSchema,
 } from "../controllers/v2/types";
+import { integrationSchema } from "../utils/integration";
 
 type OpenAPIV3_1 = {
   openapi: "3.1.0";
@@ -403,7 +404,7 @@ async function main() {
     ttl: z.number().optional(),
     activityTtl: z.number().optional(),
     streamWebView: z.boolean().optional(),
-    integration: z.any().optional(),
+    integration: integrationSchema.optional(),
     profile: z
       .object({
         name: z.string(),
@@ -498,16 +499,20 @@ async function main() {
   ]);
 
   // ExtractStatusResponse (different from ExtractResponse — returns status payload)
+  // Note: success can be false for failed jobs (status: "failed") while still
+  // returning a 200 with the status payload.
   const ExtractStatusResponseSchema = z.union([
     ErrorResponseSchema,
     z.object({
-      success: z.literal(true),
+      success: z.boolean(),
       status: z.enum(["processing", "completed", "failed"]),
       data: z.any().optional(),
       expiresAt: z.string(),
       steps: z.any().optional(),
       llmUsage: z.any().optional(),
       sources: z.any().optional(),
+      costTracking: z.any().optional(),
+      sessionIds: z.array(z.string()).optional(),
       tokensUsed: z.number().optional(),
       creditsUsed: z.number().optional(),
       error: z.string().optional(),
@@ -1271,34 +1276,33 @@ async function main() {
     },
   };
 
-  // Only include /x402/search if X402 is enabled (mirrors router gating)
-  if (process.env.X402_PAY_TO_ADDRESS) {
-    doc.paths["/x402/search"] = {
-      post: {
-        tags: ["Search"],
-        operationId: "X402 Search",
-        description:
-          "Search endpoint with micropayment via X402 protocol. Only available when X402 is enabled.",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": { schema: schemaRef("SearchRequest") },
-          },
+  // x402/search is conditionally mounted in the router (requires X402_PAY_TO_ADDRESS),
+  // but we always document it so the spec is deterministic.
+  doc.paths["/x402/search"] = {
+    post: {
+      tags: ["Search"],
+      operationId: "X402 Search",
+      description:
+        "Search endpoint with micropayment via X402 protocol. Only available when X402 is enabled on the server.",
+      security: [{ bearerAuth: [] }],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": { schema: schemaRef("SearchRequest") },
         },
-        responses: {
-          "200": {
-            description: "Successful response",
-            content: {
-              "application/json": {
-                schema: schemaRef("X402SearchResponse"),
-              },
+      },
+      responses: {
+        "200": {
+          description: "Successful response",
+          content: {
+            "application/json": {
+              schema: schemaRef("X402SearchResponse"),
             },
           },
         },
       },
-    };
-  }
+    },
+  };
 
   await fs.writeFile(outPath, JSON.stringify(doc, null, 2) + "\n", "utf8");
 }
