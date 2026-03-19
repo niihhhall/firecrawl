@@ -31,6 +31,8 @@
     "nuq-reconciler-worker:production": "node dist/src/services/worker/nuq-reconciler-worker.js",
     "extract-worker": "tsc-watch --onSuccess \"node dist/src/services/extract-worker.js\"",
     "extract-worker:production": "node dist/src/services/extract-worker.js",
+    "webhook-worker": "tsc-watch --onSuccess \"node dist/src/services/webhook-worker.js\"",
+    "webhook-worker:production": "node dist/src/services/webhook-worker.js",
     "index-worker": "tsc-watch --onSuccess \"node dist/src/services/indexing/index-worker.js\"",
     "index-worker:production": "node dist/src/services/indexing/index-worker.js",
     "mongo-docker": "docker run -d -p 2717:27017 -v ./mongo-data:/data/db --name mongodb mongo:latest",

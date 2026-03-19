@@ -129,6 +129,9 @@ const configSchema = z.object({
   NUQ_PREFETCH_WORKER_PORT: z.coerce.number().default(3011).catch(3011), // todo: investigate why .catch is needed
   NUQ_RECONCILER_WORKER_PORT: z.coerce.number().default(3012).catch(3012),
   EXTRACT_WORKER_PORT: z.coerce.number().default(3004),
+  WEBHOOK_WORKER_PORT: z.coerce.number().default(3013),
+  WEBHOOK_WORKER_PREFETCH_COUNT: z.coerce.number().default(50),
+  WEBHOOK_MAX_RETRIES: z.coerce.number().default(3),
   NUQ_WAIT_MODE: z.string().optional(),
 
   // Harness Configuration
