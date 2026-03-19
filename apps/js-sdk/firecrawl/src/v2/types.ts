@@ -726,6 +726,16 @@ export interface BrowserDeleteResponse {
   error?: string;
 }
 
+export interface ScrapeExecuteRequest {
+  code: string;
+  language?: "python" | "node" | "bash";
+  timeout?: number;
+  origin?: string;
+}
+
+export type ScrapeExecuteResponse = BrowserExecuteResponse;
+export type ScrapeBrowserDeleteResponse = BrowserDeleteResponse;
+
 export interface BrowserSession {
   id: string;
   status: string;

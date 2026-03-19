@@ -91,6 +91,27 @@ class AsyncFirecrawlClient:
         options = ScrapeOptions(**{k: v for k, v in kwargs.items() if v is not None}) if kwargs else None
         return await async_scrape.scrape(self.async_http_client, url, options)
 
+    async def scrape_execute(
+        self,
+        job_id: str,
+        code: str,
+        *,
+        language: Literal["python", "node", "bash"] = "node",
+        timeout: Optional[int] = None,
+        origin: Optional[str] = None,
+    ):
+        return await async_scrape.scrape_execute(
+            self.async_http_client,
+            job_id,
+            code,
+            language=language,
+            timeout=timeout,
+            origin=origin,
+        )
+
+    async def delete_scrape_browser(self, job_id: str):
+        return await async_scrape.delete_scrape_browser(self.async_http_client, job_id)
+
     # Search
     async def search(
         self,

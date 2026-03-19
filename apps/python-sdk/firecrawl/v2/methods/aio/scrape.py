@@ -1,5 +1,10 @@
-from typing import Optional, Dict, Any
-from ...types import ScrapeOptions, Document
+from typing import Optional, Dict, Any, Literal
+from ...types import (
+    ScrapeOptions,
+    Document,
+    BrowserExecuteResponse,
+    BrowserDeleteResponse,
+)
 from ...utils.normalize import normalize_document_input
 from ...utils.error_handler import handle_response_error
 from ...utils.validation import prepare_scrape_options, validate_scrape_options
@@ -30,4 +35,62 @@ async def scrape(client: AsyncHttpClient, url: str, options: Optional[ScrapeOpti
     document_data = body.get("data", {})
     normalized = normalize_document_input(document_data)
     return Document(**normalized)
+
+
+async def scrape_execute(
+    client: AsyncHttpClient,
+    job_id: str,
+    code: str,
+    *,
+    language: Literal["python", "node", "bash"] = "node",
+    timeout: Optional[int] = None,
+    origin: Optional[str] = None,
+) -> BrowserExecuteResponse:
+    if not job_id or not job_id.strip():
+        raise ValueError("Job ID cannot be empty")
+    if not code or not code.strip():
+        raise ValueError("Code cannot be empty")
+
+    payload: Dict[str, Any] = {
+        "code": code,
+        "language": language,
+    }
+    if timeout is not None:
+        payload["timeout"] = timeout
+    if origin is not None:
+        payload["origin"] = origin
+
+    response = await client.post(f"/v2/scrape/{job_id}/execute", payload)
+    if response.status_code >= 400:
+        handle_response_error(response, "execute scrape browser code")
+
+    body = response.json()
+    if not body.get("success"):
+        raise Exception(body.get("error", "Unknown error occurred"))
+
+    normalized = dict(body)
+    if "exitCode" in normalized and "exit_code" not in normalized:
+        normalized["exit_code"] = normalized["exitCode"]
+    return BrowserExecuteResponse(**normalized)
+
+
+async def delete_scrape_browser(
+    client: AsyncHttpClient,
+    job_id: str,
+) -> BrowserDeleteResponse:
+    if not job_id or not job_id.strip():
+        raise ValueError("Job ID cannot be empty")
+
+    response = await client.delete(f"/v2/scrape/{job_id}/browser")
+    if response.status_code >= 400:
+        handle_response_error(response, "delete scrape browser session")
+
+    body = response.json()
+    normalized = dict(body)
+    if "sessionDurationMs" in normalized and "session_duration_ms" not in normalized:
+        normalized["session_duration_ms"] = normalized["sessionDurationMs"]
+    if "creditsBilled" in normalized and "credits_billed" not in normalized:
+        normalized["credits_billed"] = normalized["creditsBilled"]
+
+    return BrowserDeleteResponse(**normalized)
 

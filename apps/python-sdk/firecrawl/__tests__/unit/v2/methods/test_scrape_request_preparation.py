@@ -1,6 +1,40 @@
 import pytest
 from firecrawl.v2.types import ScrapeOptions, Viewport, ScreenshotAction
-from firecrawl.v2.methods.scrape import _prepare_scrape_request
+from firecrawl.v2.methods.scrape import (
+    _prepare_scrape_request,
+    scrape_execute,
+    delete_scrape_browser,
+)
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, payload):
+        self.status_code = status_code
+        self._payload = payload
+        self.ok = status_code < 400
+
+    def json(self):
+        return self._payload
+
+    @property
+    def text(self):
+        return str(self._payload)
+
+
+class _FakeClient:
+    def __init__(self, *, post_response: _FakeResponse, delete_response: _FakeResponse):
+        self.post_response = post_response
+        self.delete_response = delete_response
+        self.last_post = None
+        self.last_delete = None
+
+    def post(self, endpoint, payload):
+        self.last_post = (endpoint, payload)
+        return self.post_response
+
+    def delete(self, endpoint):
+        self.last_delete = endpoint
+        return self.delete_response
 
 
 class TestScrapeRequestPreparation:
@@ -107,3 +141,77 @@ class TestScrapeRequestPreparation:
         )
         data = _prepare_scrape_request("https://example.com", opts)
         assert data["integration"] == "_unit-test"
+
+    def test_scrape_execute_request_and_response_normalization(self):
+        client = _FakeClient(
+            post_response=_FakeResponse(
+                200,
+                {
+                    "success": True,
+                    "stdout": "ok",
+                    "exitCode": 0,
+                },
+            ),
+            delete_response=_FakeResponse(200, {"success": True}),
+        )
+        response = scrape_execute(
+            client,
+            "job-123",
+            "console.log('ok')",
+            timeout=45,
+            origin="_unit-test",
+        )
+
+        assert client.last_post[0] == "/v2/scrape/job-123/execute"
+        assert client.last_post[1] == {
+            "code": "console.log('ok')",
+            "language": "node",
+            "timeout": 45,
+            "origin": "_unit-test",
+        }
+        assert response.success is True
+        assert response.exit_code == 0
+
+    def test_scrape_execute_validates_required_inputs(self):
+        client = _FakeClient(
+            post_response=_FakeResponse(200, {"success": True}),
+            delete_response=_FakeResponse(200, {"success": True}),
+        )
+        with pytest.raises(ValueError, match="Job ID cannot be empty"):
+            scrape_execute(client, "", "console.log('ok')")
+        with pytest.raises(ValueError, match="Code cannot be empty"):
+            scrape_execute(client, "job-123", "   ")
+
+    def test_scrape_execute_raises_when_success_false(self):
+        client = _FakeClient(
+            post_response=_FakeResponse(
+                200,
+                {
+                    "success": False,
+                    "error": "Replay context is unavailable",
+                },
+            ),
+            delete_response=_FakeResponse(200, {"success": True}),
+        )
+
+        with pytest.raises(Exception, match="Replay context is unavailable"):
+            scrape_execute(client, "job-123", "console.log('ok')")
+
+    def test_delete_scrape_browser_request_and_response_normalization(self):
+        client = _FakeClient(
+            post_response=_FakeResponse(200, {"success": True}),
+            delete_response=_FakeResponse(
+                200,
+                {
+                    "success": True,
+                    "sessionDurationMs": 1200,
+                    "creditsBilled": 3,
+                },
+            ),
+        )
+        response = delete_scrape_browser(client, "job-123")
+
+        assert client.last_delete == "/v2/scrape/job-123/browser"
+        assert response.success is True
+        assert response.session_duration_ms == 1200
+        assert response.credits_billed == 3

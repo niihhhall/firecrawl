@@ -1,5 +1,9 @@
 import { HttpClient } from "./utils/httpClient";
-import { scrape } from "./methods/scrape";
+import {
+  scrape,
+  scrapeExecute as scrapeExecuteMethod,
+  deleteScrapeBrowser as deleteScrapeBrowserMethod,
+} from "./methods/scrape";
 import { search } from "./methods/search";
 import { map as mapMethod } from "./methods/map";
 import {
@@ -50,6 +54,9 @@ import type {
   BrowserExecuteResponse,
   BrowserDeleteResponse,
   BrowserListResponse,
+  ScrapeExecuteRequest,
+  ScrapeExecuteResponse,
+  ScrapeBrowserDeleteResponse,
 } from "./types";
 import { Watcher } from "./watcher";
 import type { WatcherOptions } from "./watcher";
@@ -128,6 +135,25 @@ export class FirecrawlClient {
   async scrape(url: string, options?: ScrapeOptions): Promise<Document>;
   async scrape(url: string, options?: ScrapeOptions): Promise<Document> {
     return scrape(this.http, url, options);
+  }
+  /**
+   * Execute code against the browser session associated with a scrape job.
+   * @param jobId Scrape job id.
+   * @param args Code to execute with language/timeout options.
+   * @returns Execution result including stdout, stderr, exitCode, and killed status.
+   */
+  async scrapeExecute(
+    jobId: string,
+    args: ScrapeExecuteRequest
+  ): Promise<ScrapeExecuteResponse> {
+    return scrapeExecuteMethod(this.http, jobId, args);
+  }
+  /**
+   * Delete the browser session associated with a scrape job.
+   * @param jobId Scrape job id.
+   */
+  async deleteScrapeBrowser(jobId: string): Promise<ScrapeBrowserDeleteResponse> {
+    return deleteScrapeBrowserMethod(this.http, jobId);
   }
 
   // Search

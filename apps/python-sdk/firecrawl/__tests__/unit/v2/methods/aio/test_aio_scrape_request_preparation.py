@@ -1,6 +1,44 @@
 import pytest
 from firecrawl.v2.types import ScrapeOptions, Location
-from firecrawl.v2.methods.aio.scrape import _prepare_scrape_request
+from firecrawl.v2.methods.aio.scrape import (
+    _prepare_scrape_request,
+    scrape_execute,
+    delete_scrape_browser,
+)
+
+
+class _FakeAsyncResponse:
+    def __init__(self, status_code: int, payload):
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+    @property
+    def text(self):
+        return str(self._payload)
+
+
+class _FakeAsyncClient:
+    def __init__(
+        self,
+        *,
+        post_response: _FakeAsyncResponse,
+        delete_response: _FakeAsyncResponse,
+    ):
+        self.post_response = post_response
+        self.delete_response = delete_response
+        self.last_post = None
+        self.last_delete = None
+
+    async def post(self, endpoint, payload):
+        self.last_post = (endpoint, payload)
+        return self.post_response
+
+    async def delete(self, endpoint):
+        self.last_delete = endpoint
+        return self.delete_response
 
 
 class TestAsyncScrapeRequestPreparation:
@@ -47,4 +85,81 @@ class TestAsyncScrapeRequestPreparation:
         assert payload["proxy"] == "basic"
         assert payload["maxAge"] == 1000
         assert payload["storeInCache"] is False
+
+    @pytest.mark.asyncio
+    async def test_scrape_execute_request_and_response_normalization(self):
+        client = _FakeAsyncClient(
+            post_response=_FakeAsyncResponse(
+                200,
+                {
+                    "success": True,
+                    "stdout": "ok",
+                    "exitCode": 0,
+                },
+            ),
+            delete_response=_FakeAsyncResponse(200, {"success": True}),
+        )
+        response = await scrape_execute(
+            client,
+            "job-123",
+            "console.log('ok')",
+            timeout=30,
+            origin="_unit-test",
+        )
+
+        assert client.last_post[0] == "/v2/scrape/job-123/execute"
+        assert client.last_post[1] == {
+            "code": "console.log('ok')",
+            "language": "node",
+            "timeout": 30,
+            "origin": "_unit-test",
+        }
+        assert response.success is True
+        assert response.exit_code == 0
+
+    @pytest.mark.asyncio
+    async def test_scrape_execute_validates_required_inputs(self):
+        client = _FakeAsyncClient(
+            post_response=_FakeAsyncResponse(200, {"success": True}),
+            delete_response=_FakeAsyncResponse(200, {"success": True}),
+        )
+        with pytest.raises(ValueError, match="Job ID cannot be empty"):
+            await scrape_execute(client, "", "console.log('ok')")
+        with pytest.raises(ValueError, match="Code cannot be empty"):
+            await scrape_execute(client, "job-123", "   ")
+
+    @pytest.mark.asyncio
+    async def test_scrape_execute_raises_when_success_false(self):
+        client = _FakeAsyncClient(
+            post_response=_FakeAsyncResponse(
+                200,
+                {
+                    "success": False,
+                    "error": "Replay context is unavailable",
+                },
+            ),
+            delete_response=_FakeAsyncResponse(200, {"success": True}),
+        )
+        with pytest.raises(Exception, match="Replay context is unavailable"):
+            await scrape_execute(client, "job-123", "console.log('ok')")
+
+    @pytest.mark.asyncio
+    async def test_delete_scrape_browser_request_and_response_normalization(self):
+        client = _FakeAsyncClient(
+            post_response=_FakeAsyncResponse(200, {"success": True}),
+            delete_response=_FakeAsyncResponse(
+                200,
+                {
+                    "success": True,
+                    "sessionDurationMs": 900,
+                    "creditsBilled": 2,
+                },
+            ),
+        )
+        response = await delete_scrape_browser(client, "job-123")
+
+        assert client.last_delete == "/v2/scrape/job-123/browser"
+        assert response.success is True
+        assert response.session_duration_ms == 900
+        assert response.credits_billed == 2
 

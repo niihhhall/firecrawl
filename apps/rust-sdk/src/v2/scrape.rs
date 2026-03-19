@@ -123,6 +123,66 @@ struct ScrapeResponse {
     warning: Option<String>,
 }
 
+/// Supported languages for scrape-bound browser execution.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ScrapeExecuteLanguage {
+    Python,
+    Node,
+    Bash,
+}
+
+/// Options for executing code in a scrape-bound browser session.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapeExecuteOptions {
+    /// Code to execute.
+    pub code: String,
+    /// Runtime language for the code.
+    pub language: Option<ScrapeExecuteLanguage>,
+    /// Execution timeout in seconds.
+    pub timeout: Option<u32>,
+    /// Optional origin tag for request attribution.
+    pub origin: Option<String>,
+}
+
+/// Response from scrape-bound browser execution.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapeExecuteResponse {
+    /// Whether the request succeeded.
+    pub success: bool,
+    /// Captured stdout from execution.
+    pub stdout: Option<String>,
+    /// Optional execution result payload.
+    pub result: Option<String>,
+    /// Captured stderr from execution.
+    pub stderr: Option<String>,
+    /// Process exit code.
+    pub exit_code: Option<i32>,
+    /// Whether execution was killed by timeout or system.
+    pub killed: Option<bool>,
+    /// Error message when execution fails.
+    pub error: Option<String>,
+}
+
+/// Response from deleting a scrape-bound browser session.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapeBrowserDeleteResponse {
+    /// Whether the delete request succeeded.
+    pub success: bool,
+    /// Session duration in milliseconds when available.
+    pub session_duration_ms: Option<u64>,
+    /// Credits billed when available.
+    pub credits_billed: Option<u32>,
+    /// Error message when deletion fails.
+    pub error: Option<String>,
+}
+
 impl Client {
     /// Scrapes a URL and returns the content in the requested formats.
     ///
@@ -247,6 +307,72 @@ impl Client {
 
         let document = self.scrape(url, options).await?;
         Ok(document.json.unwrap_or(Value::Null))
+    }
+
+    /// Executes code in the browser session associated with a scrape job.
+    ///
+    /// # Arguments
+    ///
+    /// * `job_id` - The scrape job ID.
+    /// * `options` - Execution options including code and runtime config.
+    ///
+    /// # Returns
+    ///
+    /// A `ScrapeExecuteResponse` containing execution output.
+    pub async fn scrape_execute(
+        &self,
+        job_id: impl AsRef<str>,
+        options: ScrapeExecuteOptions,
+    ) -> Result<ScrapeExecuteResponse, FirecrawlError> {
+        let mut body = options;
+        if body.language.is_none() {
+            body.language = Some(ScrapeExecuteLanguage::Node);
+        }
+
+        let response = self
+            .client
+            .post(self.url(&format!("/scrape/{}/execute", job_id.as_ref())))
+            .headers(self.prepare_headers(None))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| {
+                FirecrawlError::HttpError(
+                    format!("Executing scrape browser code for {}", job_id.as_ref()),
+                    e,
+                )
+            })?;
+
+        self.handle_response(response, "scrape execute").await
+    }
+
+    /// Deletes the browser session associated with a scrape job.
+    ///
+    /// # Arguments
+    ///
+    /// * `job_id` - The scrape job ID.
+    ///
+    /// # Returns
+    ///
+    /// A `ScrapeBrowserDeleteResponse` indicating deletion status.
+    pub async fn delete_scrape_browser(
+        &self,
+        job_id: impl AsRef<str>,
+    ) -> Result<ScrapeBrowserDeleteResponse, FirecrawlError> {
+        let response = self
+            .client
+            .delete(self.url(&format!("/scrape/{}/browser", job_id.as_ref())))
+            .headers(self.prepare_headers(None))
+            .send()
+            .await
+            .map_err(|e| {
+                FirecrawlError::HttpError(
+                    format!("Deleting scrape browser for {}", job_id.as_ref()),
+                    e,
+                )
+            })?;
+
+        self.handle_response(response, "delete scrape browser").await
     }
 }
 
@@ -397,6 +523,105 @@ mod tests {
 
         let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
         let result = client.scrape("invalid-url", None).await;
+
+        assert!(result.is_err());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_scrape_execute_with_mock() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/scrape/job-123/execute")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "stdout": "ok",
+                    "result": "done",
+                    "stderr": "",
+                    "exitCode": 0,
+                    "killed": false
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let response = client
+            .scrape_execute(
+                "job-123",
+                ScrapeExecuteOptions {
+                    code: "console.log('ok')".to_string(),
+                    timeout: Some(30),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(response.success);
+        assert_eq!(response.exit_code, Some(0));
+        assert_eq!(response.result, Some("done".to_string()));
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_delete_scrape_browser_with_mock() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("DELETE", "/v2/scrape/job-123/browser")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "sessionDurationMs": 1200,
+                    "creditsBilled": 3
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let response = client.delete_scrape_browser("job-123").await.unwrap();
+
+        assert!(response.success);
+        assert_eq!(response.session_duration_ms, Some(1200));
+        assert_eq!(response.credits_billed, Some(3));
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_scrape_execute_error_response() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/scrape/job-404/execute")
+            .with_status(404)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": false,
+                    "error": "Job not found."
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let result = client
+            .scrape_execute(
+                "job-404",
+                ScrapeExecuteOptions {
+                    code: "console.log('ok')".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await;
 
         assert!(result.is_err());
         mock.assert();
