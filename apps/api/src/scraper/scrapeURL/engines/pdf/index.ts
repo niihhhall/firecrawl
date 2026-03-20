@@ -28,7 +28,7 @@ import {
   extractAndEmitNativeLogs,
 } from "../../../../lib/native-logging";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
-import { scrapePDFWithRunPodMU } from "./runpodMU";
+import { scrapePDFWithSelfHostedOCR } from "./selfHostedOCR";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
@@ -331,36 +331,30 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       );
     }
 
-    // OCR / MU fallback.
+    // OCR fallback (self-hosted OCR primary, MinerU as experiment).
     // Skipped only when Rust extraction is enabled AND mode is "fast".
     const skipOCR = rustEnabled && mode === "fast";
     if (!result && !skipOCR) {
       const base64Content = (await readFile(tempFilePath)).toString("base64");
 
-      if (
-        base64Content.length < MAX_FILE_SIZE &&
-        config.RUNPOD_MU_API_KEY &&
-        config.RUNPOD_MU_POD_ID
-      ) {
-        const muV1StartedAt = Date.now();
+      if (base64Content.length < MAX_FILE_SIZE && config.PDF_OCR_BASE_URL) {
+        const ocrStartedAt = Date.now();
         try {
-          result = await scrapePDFWithRunPodMU(
+          result = await scrapePDFWithSelfHostedOCR(
             {
               ...meta,
               logger: meta.logger.child({
-                method: "scrapePDF/scrapePDFWithRunPodMU",
+                method: "scrapePDF/scrapePDFWithSelfHostedOCR",
               }),
             },
-            tempFilePath,
             base64Content,
             maxPages,
-            effectivePageCount,
           );
-          const muV1DurationMs = Date.now() - muV1StartedAt;
+          const ocrDurationMs = Date.now() - ocrStartedAt;
           meta.logger
-            .child({ method: "scrapePDF/MUv1Experiment" })
-            .info("MU v1 completed", {
-              durationMs: muV1DurationMs,
+            .child({ method: "scrapePDF/selfHostedOCR" })
+            .info("Self-hosted OCR completed", {
+              durationMs: ocrDurationMs,
               url: meta.rewrittenUrl ?? meta.url,
               pages: effectivePageCount,
               success: true,
@@ -372,7 +366,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             config.PDF_SHADOW_COMPARISON_ENABLE
           ) {
             const shadowRust = rustMarkdownForShadow;
-            const shadowMu = result.markdown;
+            const shadowOcr = result.markdown;
             const shadowLogger = meta.logger.child({
               method: "scrapePDF/shadowComparison",
             });
@@ -380,7 +374,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
             (async () => {
               try {
-                const metrics = comparePdfOutputs(shadowRust, shadowMu);
+                const metrics = comparePdfOutputs(shadowRust, shadowOcr);
                 shadowLogger.info("shadow comparison complete", {
                   scrapeId: meta.id,
                   url: isZdr ? undefined : (meta.rewrittenUrl ?? meta.url),
@@ -404,7 +398,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             throw error;
           }
           meta.logger.warn(
-            "RunPod MU failed to parse PDF (could be due to timeout) -- falling back to parse-pdf",
+            "Self-hosted OCR failed to parse PDF -- falling back to MinerU/parse-pdf",
             { error },
           );
           captureExceptionWithZdrCheck(error, {
@@ -416,17 +410,18 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               url: meta.rewrittenUrl ?? meta.url,
             },
           });
-          const muV1DurationMs = Date.now() - muV1StartedAt;
+          const ocrDurationMs = Date.now() - ocrStartedAt;
           meta.logger
-            .child({ method: "scrapePDF/MUv1Experiment" })
-            .info("MU v1 failed", {
-              durationMs: muV1DurationMs,
+            .child({ method: "scrapePDF/selfHostedOCR" })
+            .info("Self-hosted OCR failed", {
+              durationMs: ocrDurationMs,
               url: meta.rewrittenUrl ?? meta.url,
               pages: effectivePageCount,
               success: false,
             });
         }
       }
+
     }
 
     // Final fallback to PdfParse.
