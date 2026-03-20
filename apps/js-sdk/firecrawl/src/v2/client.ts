@@ -1,8 +1,8 @@
 import { HttpClient } from "./utils/httpClient";
 import {
   scrape,
-  scrapeExecute as scrapeExecuteMethod,
-  deleteScrapeBrowser as deleteScrapeBrowserMethod,
+  interact as interactMethod,
+  stopInteractiveBrowser as stopInteractiveBrowserMethod,
 } from "./methods/scrape";
 import { search } from "./methods/search";
 import { map as mapMethod } from "./methods/map";
@@ -137,23 +137,38 @@ export class FirecrawlClient {
     return scrape(this.http, url, options);
   }
   /**
-   * Execute code against the browser session associated with a scrape job.
+   * Interact with the browser session associated with a scrape job.
    * @param jobId Scrape job id.
    * @param args Code to execute with language/timeout options.
    * @returns Execution result including stdout, stderr, exitCode, and killed status.
+   */
+  async interact(
+    jobId: string,
+    args: ScrapeExecuteRequest
+  ): Promise<ScrapeExecuteResponse> {
+    return interactMethod(this.http, jobId, args);
+  }
+  /**
+   * Stop the interactive browser session associated with a scrape job.
+   * @param jobId Scrape job id.
+   */
+  async stopInteractiveBrowser(jobId: string): Promise<ScrapeBrowserDeleteResponse> {
+    return stopInteractiveBrowserMethod(this.http, jobId);
+  }
+  /**
+   * @deprecated Use interact().
    */
   async scrapeExecute(
     jobId: string,
     args: ScrapeExecuteRequest
   ): Promise<ScrapeExecuteResponse> {
-    return scrapeExecuteMethod(this.http, jobId, args);
+    return this.interact(jobId, args);
   }
   /**
-   * Delete the browser session associated with a scrape job.
-   * @param jobId Scrape job id.
+   * @deprecated Use stopInteractiveBrowser().
    */
   async deleteScrapeBrowser(jobId: string): Promise<ScrapeBrowserDeleteResponse> {
-    return deleteScrapeBrowserMethod(this.http, jobId);
+    return this.stopInteractiveBrowser(jobId);
   }
 
   // Search

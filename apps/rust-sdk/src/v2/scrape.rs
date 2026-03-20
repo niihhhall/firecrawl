@@ -309,7 +309,7 @@ impl Client {
         Ok(document.json.unwrap_or(Value::Null))
     }
 
-    /// Executes code in the browser session associated with a scrape job.
+    /// Interacts with the browser session associated with a scrape job.
     ///
     /// # Arguments
     ///
@@ -319,7 +319,7 @@ impl Client {
     /// # Returns
     ///
     /// A `ScrapeExecuteResponse` containing execution output.
-    pub async fn scrape_execute(
+    pub async fn interact(
         &self,
         job_id: impl AsRef<str>,
         options: ScrapeExecuteOptions,
@@ -331,22 +331,22 @@ impl Client {
 
         let response = self
             .client
-            .post(self.url(&format!("/scrape/{}/execute", job_id.as_ref())))
+            .post(self.url(&format!("/scrape/{}/interact", job_id.as_ref())))
             .headers(self.prepare_headers(None))
             .json(&body)
             .send()
             .await
             .map_err(|e| {
                 FirecrawlError::HttpError(
-                    format!("Executing scrape browser code for {}", job_id.as_ref()),
+                    format!("Interacting with scrape browser for {}", job_id.as_ref()),
                     e,
                 )
             })?;
 
-        self.handle_response(response, "scrape execute").await
+        self.handle_response(response, "scrape interact").await
     }
 
-    /// Deletes the browser session associated with a scrape job.
+    /// Stops the interactive browser session associated with a scrape job.
     ///
     /// # Arguments
     ///
@@ -354,25 +354,45 @@ impl Client {
     ///
     /// # Returns
     ///
-    /// A `ScrapeBrowserDeleteResponse` indicating deletion status.
-    pub async fn delete_scrape_browser(
+    /// A `ScrapeBrowserDeleteResponse` indicating stop status.
+    pub async fn stop_interactive_browser(
         &self,
         job_id: impl AsRef<str>,
     ) -> Result<ScrapeBrowserDeleteResponse, FirecrawlError> {
         let response = self
             .client
-            .delete(self.url(&format!("/scrape/{}/browser", job_id.as_ref())))
+            .delete(self.url(&format!("/scrape/{}/interact", job_id.as_ref())))
             .headers(self.prepare_headers(None))
             .send()
             .await
             .map_err(|e| {
                 FirecrawlError::HttpError(
-                    format!("Deleting scrape browser for {}", job_id.as_ref()),
+                    format!("Stopping scrape interactive browser for {}", job_id.as_ref()),
                     e,
                 )
             })?;
 
-        self.handle_response(response, "delete scrape browser").await
+        self.handle_response(response, "stop scrape interactive browser")
+            .await
+    }
+
+    /// Deprecated alias for [`Client::interact`].
+    #[deprecated(note = "Use interact() instead")]
+    pub async fn scrape_execute(
+        &self,
+        job_id: impl AsRef<str>,
+        options: ScrapeExecuteOptions,
+    ) -> Result<ScrapeExecuteResponse, FirecrawlError> {
+        self.interact(job_id, options).await
+    }
+
+    /// Deprecated alias for [`Client::stop_interactive_browser`].
+    #[deprecated(note = "Use stop_interactive_browser() instead")]
+    pub async fn delete_scrape_browser(
+        &self,
+        job_id: impl AsRef<str>,
+    ) -> Result<ScrapeBrowserDeleteResponse, FirecrawlError> {
+        self.stop_interactive_browser(job_id).await
     }
 }
 
@@ -529,11 +549,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_scrape_execute_with_mock() {
+    async fn test_interact_with_mock() {
         let mut server = mockito::Server::new_async().await;
 
         let mock = server
-            .mock("POST", "/v2/scrape/job-123/execute")
+            .mock("POST", "/v2/scrape/job-123/interact")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
@@ -551,7 +571,7 @@ mod tests {
 
         let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
         let response = client
-            .scrape_execute(
+            .interact(
                 "job-123",
                 ScrapeExecuteOptions {
                     code: "console.log('ok')".to_string(),
@@ -569,11 +589,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_delete_scrape_browser_with_mock() {
+    async fn test_stop_interactive_browser_with_mock() {
         let mut server = mockito::Server::new_async().await;
 
         let mock = server
-            .mock("DELETE", "/v2/scrape/job-123/browser")
+            .mock("DELETE", "/v2/scrape/job-123/interact")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
@@ -587,7 +607,7 @@ mod tests {
             .create();
 
         let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
-        let response = client.delete_scrape_browser("job-123").await.unwrap();
+        let response = client.stop_interactive_browser("job-123").await.unwrap();
 
         assert!(response.success);
         assert_eq!(response.session_duration_ms, Some(1200));
@@ -596,11 +616,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_scrape_execute_error_response() {
+    async fn test_interact_error_response() {
         let mut server = mockito::Server::new_async().await;
 
         let mock = server
-            .mock("POST", "/v2/scrape/job-404/execute")
+            .mock("POST", "/v2/scrape/job-404/interact")
             .with_status(404)
             .with_header("content-type", "application/json")
             .with_body(
@@ -614,7 +634,7 @@ mod tests {
 
         let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
         let result = client
-            .scrape_execute(
+            .interact(
                 "job-404",
                 ScrapeExecuteOptions {
                     code: "console.log('ok')".to_string(),

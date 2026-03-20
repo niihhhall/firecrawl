@@ -102,18 +102,18 @@ public class FirecrawlClient {
     }
 
     /**
-     * Executes code in the scrape-bound browser session for a scrape job.
+     * Interacts with the scrape-bound browser session for a scrape job.
      *
      * @param jobId the scrape job ID
      * @param code  the code to execute
      * @return the execution result including stdout, stderr, and exit code
      */
-    public BrowserExecuteResponse scrapeExecute(String jobId, String code) {
-        return scrapeExecute(jobId, code, "node", null, null);
+    public BrowserExecuteResponse interact(String jobId, String code) {
+        return interact(jobId, code, "node", null, null);
     }
 
     /**
-     * Executes code in the scrape-bound browser session for a scrape job.
+     * Interacts with the scrape-bound browser session for a scrape job.
      *
      * @param jobId    the scrape job ID
      * @param code     the code to execute
@@ -121,13 +121,13 @@ public class FirecrawlClient {
      * @param timeout  execution timeout in seconds (1-300), or null for default (30)
      * @return the execution result including stdout, stderr, and exit code
      */
-    public BrowserExecuteResponse scrapeExecute(String jobId, String code,
-                                                String language, Integer timeout) {
-        return scrapeExecute(jobId, code, language, timeout, null);
+    public BrowserExecuteResponse interact(String jobId, String code,
+                                           String language, Integer timeout) {
+        return interact(jobId, code, language, timeout, null);
     }
 
     /**
-     * Executes code in the scrape-bound browser session for a scrape job.
+     * Interacts with the scrape-bound browser session for a scrape job.
      *
      * @param jobId    the scrape job ID
      * @param code     the code to execute
@@ -136,8 +136,8 @@ public class FirecrawlClient {
      * @param origin   optional origin tag for request attribution
      * @return the execution result including stdout, stderr, and exit code
      */
-    public BrowserExecuteResponse scrapeExecute(String jobId, String code,
-                                                String language, Integer timeout, String origin) {
+    public BrowserExecuteResponse interact(String jobId, String code,
+                                           String language, Integer timeout, String origin) {
         Objects.requireNonNull(jobId, "Job ID is required");
         Objects.requireNonNull(code, "Code is required");
         Map<String, Object> body = new LinkedHashMap<>();
@@ -145,18 +145,52 @@ public class FirecrawlClient {
         body.put("language", language != null ? language : "node");
         if (timeout != null) body.put("timeout", timeout);
         if (origin != null) body.put("origin", origin);
-        return http.post("/v2/scrape/" + jobId + "/execute", body, BrowserExecuteResponse.class);
+        return http.post("/v2/scrape/" + jobId + "/interact", body, BrowserExecuteResponse.class);
     }
 
     /**
-     * Deletes the scrape-bound browser session for a scrape job.
+     * Stops the interactive browser session for a scrape job.
      *
      * @param jobId the scrape job ID
-     * @return the deletion response with session duration and billing info
+     * @return the stop response with session duration and billing info
      */
-    public BrowserDeleteResponse deleteScrapeBrowser(String jobId) {
+    public BrowserDeleteResponse stopInteractiveBrowser(String jobId) {
         Objects.requireNonNull(jobId, "Job ID is required");
-        return http.delete("/v2/scrape/" + jobId + "/browser", BrowserDeleteResponse.class);
+        return http.delete("/v2/scrape/" + jobId + "/interact", BrowserDeleteResponse.class);
+    }
+
+    /**
+     * @deprecated Use {@link #interact(String, String)}.
+     */
+    @Deprecated
+    public BrowserExecuteResponse scrapeExecute(String jobId, String code) {
+        return interact(jobId, code);
+    }
+
+    /**
+     * @deprecated Use {@link #interact(String, String, String, Integer)}.
+     */
+    @Deprecated
+    public BrowserExecuteResponse scrapeExecute(String jobId, String code,
+                                                String language, Integer timeout) {
+        return interact(jobId, code, language, timeout);
+    }
+
+    /**
+     * @deprecated Use {@link #interact(String, String, String, Integer, String)}.
+     */
+    @Deprecated
+    public BrowserExecuteResponse scrapeExecute(String jobId, String code,
+                                                String language, Integer timeout, String origin) {
+        return interact(jobId, code, language, timeout, origin);
+    }
+
+    /**
+     * @deprecated Use {@link #stopInteractiveBrowser(String)}.
+     */
+    @Deprecated
+    public BrowserDeleteResponse deleteScrapeBrowser(String jobId) {
+        return stopInteractiveBrowser(jobId);
     }
 
     // ================================================================
@@ -596,8 +630,8 @@ public class FirecrawlClient {
      * @param code  the code to execute
      * @return a CompletableFuture that resolves to the BrowserExecuteResponse
      */
-    public CompletableFuture<BrowserExecuteResponse> scrapeExecuteAsync(String jobId, String code) {
-        return CompletableFuture.supplyAsync(() -> scrapeExecute(jobId, code), asyncExecutor);
+    public CompletableFuture<BrowserExecuteResponse> interactAsync(String jobId, String code) {
+        return CompletableFuture.supplyAsync(() -> interact(jobId, code), asyncExecutor);
     }
 
     /**
@@ -609,10 +643,10 @@ public class FirecrawlClient {
      * @param timeout  execution timeout in seconds, or null for default
      * @return a CompletableFuture that resolves to the BrowserExecuteResponse
      */
-    public CompletableFuture<BrowserExecuteResponse> scrapeExecuteAsync(String jobId, String code,
-                                                                        String language, Integer timeout) {
+    public CompletableFuture<BrowserExecuteResponse> interactAsync(String jobId, String code,
+                                                                   String language, Integer timeout) {
         return CompletableFuture.supplyAsync(
-                () -> scrapeExecute(jobId, code, language, timeout),
+                () -> interact(jobId, code, language, timeout),
                 asyncExecutor
         );
     }
@@ -627,10 +661,10 @@ public class FirecrawlClient {
      * @param origin   optional origin tag for request attribution
      * @return a CompletableFuture that resolves to the BrowserExecuteResponse
      */
-    public CompletableFuture<BrowserExecuteResponse> scrapeExecuteAsync(String jobId, String code,
-                                                                        String language, Integer timeout, String origin) {
+    public CompletableFuture<BrowserExecuteResponse> interactAsync(String jobId, String code,
+                                                                   String language, Integer timeout, String origin) {
         return CompletableFuture.supplyAsync(
-                () -> scrapeExecute(jobId, code, language, timeout, origin),
+                () -> interact(jobId, code, language, timeout, origin),
                 asyncExecutor
         );
     }
@@ -641,8 +675,42 @@ public class FirecrawlClient {
      * @param jobId the scrape job ID
      * @return a CompletableFuture that resolves to the BrowserDeleteResponse
      */
+    public CompletableFuture<BrowserDeleteResponse> stopInteractiveBrowserAsync(String jobId) {
+        return CompletableFuture.supplyAsync(() -> stopInteractiveBrowser(jobId), asyncExecutor);
+    }
+
+    /**
+     * @deprecated Use {@link #interactAsync(String, String)}.
+     */
+    @Deprecated
+    public CompletableFuture<BrowserExecuteResponse> scrapeExecuteAsync(String jobId, String code) {
+        return interactAsync(jobId, code);
+    }
+
+    /**
+     * @deprecated Use {@link #interactAsync(String, String, String, Integer)}.
+     */
+    @Deprecated
+    public CompletableFuture<BrowserExecuteResponse> scrapeExecuteAsync(String jobId, String code,
+                                                                        String language, Integer timeout) {
+        return interactAsync(jobId, code, language, timeout);
+    }
+
+    /**
+     * @deprecated Use {@link #interactAsync(String, String, String, Integer, String)}.
+     */
+    @Deprecated
+    public CompletableFuture<BrowserExecuteResponse> scrapeExecuteAsync(String jobId, String code,
+                                                                        String language, Integer timeout, String origin) {
+        return interactAsync(jobId, code, language, timeout, origin);
+    }
+
+    /**
+     * @deprecated Use {@link #stopInteractiveBrowserAsync(String)}.
+     */
+    @Deprecated
     public CompletableFuture<BrowserDeleteResponse> deleteScrapeBrowserAsync(String jobId) {
-        return CompletableFuture.supplyAsync(() -> deleteScrapeBrowser(jobId), asyncExecutor);
+        return stopInteractiveBrowserAsync(jobId);
     }
 
     /**

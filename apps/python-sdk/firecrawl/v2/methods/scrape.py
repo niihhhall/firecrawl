@@ -69,7 +69,7 @@ def scrape(client: HttpClient, url: str, options: Optional[ScrapeOptions] = None
     return Document(**normalized)
 
 
-def scrape_execute(
+def interact(
     client: HttpClient,
     job_id: str,
     code: str,
@@ -79,7 +79,7 @@ def scrape_execute(
     origin: Optional[str] = None,
 ) -> BrowserExecuteResponse:
     """
-    Execute code in the scrape-bound browser session for a scrape job.
+    Interact with the scrape-bound browser session for a scrape job.
 
     Args:
         client: HTTP client instance
@@ -106,9 +106,9 @@ def scrape_execute(
     if origin is not None:
         body["origin"] = origin
 
-    response = client.post(f"/v2/scrape/{job_id}/execute", body)
+    response = client.post(f"/v2/scrape/{job_id}/interact", body)
     if not response.ok:
-        handle_response_error(response, "execute scrape browser code")
+        handle_response_error(response, "interact with scrape browser")
 
     payload = response.json()
     if not payload.get("success"):
@@ -120,12 +120,12 @@ def scrape_execute(
     return BrowserExecuteResponse(**normalized)
 
 
-def delete_scrape_browser(
+def stop_interactive_browser(
     client: HttpClient,
     job_id: str,
 ) -> BrowserDeleteResponse:
     """
-    Delete the scrape-bound browser session for a scrape job.
+    Stop the interactive browser session for a scrape job.
 
     Args:
         client: HTTP client instance
@@ -137,9 +137,9 @@ def delete_scrape_browser(
     if not job_id or not job_id.strip():
         raise ValueError("Job ID cannot be empty")
 
-    response = client.delete(f"/v2/scrape/{job_id}/browser")
+    response = client.delete(f"/v2/scrape/{job_id}/interact")
     if not response.ok:
-        handle_response_error(response, "delete scrape browser session")
+        handle_response_error(response, "stop interactive browser session")
 
     payload = response.json()
     normalized = dict(payload)
@@ -149,3 +149,31 @@ def delete_scrape_browser(
         normalized["credits_billed"] = normalized["creditsBilled"]
 
     return BrowserDeleteResponse(**normalized)
+
+
+def scrape_execute(
+    client: HttpClient,
+    job_id: str,
+    code: str,
+    *,
+    language: Literal["python", "node", "bash"] = "node",
+    timeout: Optional[int] = None,
+    origin: Optional[str] = None,
+) -> BrowserExecuteResponse:
+    """Deprecated alias for interact()."""
+    return interact(
+        client,
+        job_id,
+        code,
+        language=language,
+        timeout=timeout,
+        origin=origin,
+    )
+
+
+def delete_scrape_browser(
+    client: HttpClient,
+    job_id: str,
+) -> BrowserDeleteResponse:
+    """Deprecated alias for stop_interactive_browser()."""
+    return stop_interactive_browser(client, job_id)

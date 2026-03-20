@@ -30,7 +30,7 @@ export async function scrape(http: HttpClient, url: string, options?: ScrapeOpti
   }
 }
 
-export async function scrapeExecute(
+export async function interact(
   http: HttpClient,
   jobId: string,
   args: ScrapeExecuteRequest
@@ -51,18 +51,18 @@ export async function scrapeExecute(
 
   try {
     const res = await http.post<ScrapeExecuteResponse>(
-      `/v2/scrape/${jobId}/execute`,
+      `/v2/scrape/${jobId}/interact`,
       body
     );
-    if (res.status !== 200) throwForBadResponse(res, "execute scrape browser code");
+    if (res.status !== 200) throwForBadResponse(res, "interact with scrape browser");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "execute scrape browser code");
+    if (err?.isAxiosError) return normalizeAxiosError(err, "interact with scrape browser");
     throw err;
   }
 }
 
-export async function deleteScrapeBrowser(
+export async function stopInteractiveBrowser(
   http: HttpClient,
   jobId: string
 ): Promise<ScrapeBrowserDeleteResponse> {
@@ -72,13 +72,30 @@ export async function deleteScrapeBrowser(
 
   try {
     const res = await http.delete<ScrapeBrowserDeleteResponse>(
-      `/v2/scrape/${jobId}/browser`
+      `/v2/scrape/${jobId}/interact`
     );
-    if (res.status !== 200) throwForBadResponse(res, "delete scrape browser session");
+    if (res.status !== 200) throwForBadResponse(res, "stop interactive browser session");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "delete scrape browser session");
+    if (err?.isAxiosError) return normalizeAxiosError(err, "stop interactive browser session");
     throw err;
   }
+}
+
+/** @deprecated Use interact(). */
+export async function scrapeExecute(
+  http: HttpClient,
+  jobId: string,
+  args: ScrapeExecuteRequest
+): Promise<ScrapeExecuteResponse> {
+  return interact(http, jobId, args);
+}
+
+/** @deprecated Use stopInteractiveBrowser(). */
+export async function deleteScrapeBrowser(
+  http: HttpClient,
+  jobId: string
+): Promise<ScrapeBrowserDeleteResponse> {
+  return stopInteractiveBrowser(http, jobId);
 }
 

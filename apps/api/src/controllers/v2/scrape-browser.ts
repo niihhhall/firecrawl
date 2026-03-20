@@ -508,7 +508,7 @@ await syncReplayPage();
 // Controllers
 // ---------------------------------------------------------------------------
 
-export async function scrapeExecuteController(
+export async function scrapeInteractController(
   req: RequestWithAuth<
     { jobId: string },
     BrowserExecuteResponse,
@@ -525,7 +525,7 @@ export async function scrapeExecuteController(
     scrapeId,
     teamId: req.auth.team_id,
     module: "api/v2",
-    method: "browserExecuteController",
+    method: "scrapeInteractController",
   });
 
   const scrape = (await supabaseGetScrapeById(
@@ -837,7 +837,7 @@ export async function scrapeExecuteController(
   });
 }
 
-export async function scrapeBrowserDeleteController(
+export async function scrapeStopInteractiveBrowserController(
   req: RequestWithAuth<{ jobId: string }, BrowserDeleteResponse>,
   res: Response<BrowserDeleteResponse>,
 ) {
@@ -845,7 +845,7 @@ export async function scrapeBrowserDeleteController(
     scrapeId: req.params.jobId,
     teamId: req.auth.team_id,
     module: "api/v2",
-    method: "scrapeBrowserDeleteController",
+    method: "scrapeStopInteractiveBrowserController",
   });
 
   const session = await getBrowserSessionFromScrape(req.params.jobId);

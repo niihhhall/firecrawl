@@ -57,8 +57,10 @@ class V2Proxy:
 
         if client_instance:
             self.scrape = client_instance.scrape
-            self.scrape_execute = client_instance.scrape_execute
-            self.delete_scrape_browser = client_instance.delete_scrape_browser
+            self.interact = client_instance.interact
+            self.stop_interactive_browser = client_instance.stop_interactive_browser
+            self.scrape_execute = self.interact
+            self.delete_scrape_browser = self.stop_interactive_browser
             self.search = client_instance.search
             self.crawl = client_instance.crawl
             self.start_crawl = client_instance.start_crawl
@@ -131,8 +133,10 @@ class AsyncV2Proxy:
 
         if client_instance:
             self.scrape = client_instance.scrape
-            self.scrape_execute = client_instance.scrape_execute
-            self.delete_scrape_browser = client_instance.delete_scrape_browser
+            self.interact = client_instance.interact
+            self.stop_interactive_browser = client_instance.stop_interactive_browser
+            self.scrape_execute = self.interact
+            self.delete_scrape_browser = self.stop_interactive_browser
             self.search = client_instance.search
             self.crawl = client_instance.crawl
             self.start_crawl = client_instance.start_crawl
@@ -225,8 +229,10 @@ class Firecrawl:
         self.v2 = V2Proxy(self._v2_client)
         
         self.scrape = self._v2_client.scrape
-        self.scrape_execute = self._v2_client.scrape_execute
-        self.delete_scrape_browser = self._v2_client.delete_scrape_browser
+        self.interact = self._v2_client.interact
+        self.stop_interactive_browser = self._v2_client.stop_interactive_browser
+        self.scrape_execute = self.interact
+        self.delete_scrape_browser = self.stop_interactive_browser
         self.search = self._v2_client.search
         self.map = self._v2_client.map
 
@@ -299,8 +305,10 @@ class AsyncFirecrawl:
         # Expose v2 async surface directly on the top-level client for ergonomic access
         # Keep method names aligned with the sync client
         self.scrape = self._v2_client.scrape
-        self.scrape_execute = self._v2_client.scrape_execute
-        self.delete_scrape_browser = self._v2_client.delete_scrape_browser
+        self.interact = self._v2_client.interact
+        self.stop_interactive_browser = self._v2_client.stop_interactive_browser
+        self.scrape_execute = self.interact
+        self.delete_scrape_browser = self.stop_interactive_browser
         self.search = self._v2_client.search
         self.map = self._v2_client.map
 

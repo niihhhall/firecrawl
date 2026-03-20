@@ -185,7 +185,7 @@ class FirecrawlClient:
         ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, integration]) else None
         return scrape_module.scrape(self.http_client, url, options)
 
-    def scrape_execute(
+    def interact(
         self,
         job_id: str,
         code: str,
@@ -195,7 +195,7 @@ class FirecrawlClient:
         origin: Optional[str] = None,
     ):
         """
-        Execute code in the browser session associated with a scrape job.
+        Interact with the browser session associated with a scrape job.
 
         Args:
             job_id: Scrape job ID
@@ -207,7 +207,7 @@ class FirecrawlClient:
         Returns:
             BrowserExecuteResponse with execution result
         """
-        return scrape_module.scrape_execute(
+        return scrape_module.interact(
             self.http_client,
             job_id,
             code,
@@ -216,9 +216,9 @@ class FirecrawlClient:
             origin=origin,
         )
 
-    def delete_scrape_browser(self, job_id: str):
+    def stop_interactive_browser(self, job_id: str):
         """
-        Delete the browser session associated with a scrape job.
+        Stop the interactive browser session associated with a scrape job.
 
         Args:
             job_id: Scrape job ID
@@ -226,7 +226,29 @@ class FirecrawlClient:
         Returns:
             BrowserDeleteResponse
         """
-        return scrape_module.delete_scrape_browser(self.http_client, job_id)
+        return scrape_module.stop_interactive_browser(self.http_client, job_id)
+
+    def scrape_execute(
+        self,
+        job_id: str,
+        code: str,
+        *,
+        language: Literal["python", "node", "bash"] = "node",
+        timeout: Optional[int] = None,
+        origin: Optional[str] = None,
+    ):
+        """Deprecated alias for interact()."""
+        return self.interact(
+            job_id,
+            code,
+            language=language,
+            timeout=timeout,
+            origin=origin,
+        )
+
+    def delete_scrape_browser(self, job_id: str):
+        """Deprecated alias for stop_interactive_browser()."""
+        return self.stop_interactive_browser(job_id)
 
     def search(
         self,

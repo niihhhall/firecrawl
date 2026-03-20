@@ -37,7 +37,7 @@ async def scrape(client: AsyncHttpClient, url: str, options: Optional[ScrapeOpti
     return Document(**normalized)
 
 
-async def scrape_execute(
+async def interact(
     client: AsyncHttpClient,
     job_id: str,
     code: str,
@@ -60,9 +60,9 @@ async def scrape_execute(
     if origin is not None:
         payload["origin"] = origin
 
-    response = await client.post(f"/v2/scrape/{job_id}/execute", payload)
+    response = await client.post(f"/v2/scrape/{job_id}/interact", payload)
     if response.status_code >= 400:
-        handle_response_error(response, "execute scrape browser code")
+        handle_response_error(response, "interact with scrape browser")
 
     body = response.json()
     if not body.get("success"):
@@ -74,16 +74,16 @@ async def scrape_execute(
     return BrowserExecuteResponse(**normalized)
 
 
-async def delete_scrape_browser(
+async def stop_interactive_browser(
     client: AsyncHttpClient,
     job_id: str,
 ) -> BrowserDeleteResponse:
     if not job_id or not job_id.strip():
         raise ValueError("Job ID cannot be empty")
 
-    response = await client.delete(f"/v2/scrape/{job_id}/browser")
+    response = await client.delete(f"/v2/scrape/{job_id}/interact")
     if response.status_code >= 400:
-        handle_response_error(response, "delete scrape browser session")
+        handle_response_error(response, "stop interactive browser session")
 
     body = response.json()
     normalized = dict(body)
@@ -93,4 +93,32 @@ async def delete_scrape_browser(
         normalized["credits_billed"] = normalized["creditsBilled"]
 
     return BrowserDeleteResponse(**normalized)
+
+
+async def scrape_execute(
+    client: AsyncHttpClient,
+    job_id: str,
+    code: str,
+    *,
+    language: Literal["python", "node", "bash"] = "node",
+    timeout: Optional[int] = None,
+    origin: Optional[str] = None,
+) -> BrowserExecuteResponse:
+    """Deprecated alias for interact()."""
+    return await interact(
+        client,
+        job_id,
+        code,
+        language=language,
+        timeout=timeout,
+        origin=origin,
+    )
+
+
+async def delete_scrape_browser(
+    client: AsyncHttpClient,
+    job_id: str,
+) -> BrowserDeleteResponse:
+    """Deprecated alias for stop_interactive_browser()."""
+    return await stop_interactive_browser(client, job_id)
 

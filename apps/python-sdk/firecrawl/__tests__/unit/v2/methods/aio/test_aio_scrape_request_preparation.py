@@ -2,8 +2,8 @@ import pytest
 from firecrawl.v2.types import ScrapeOptions, Location
 from firecrawl.v2.methods.aio.scrape import (
     _prepare_scrape_request,
-    scrape_execute,
-    delete_scrape_browser,
+    interact,
+    stop_interactive_browser,
 )
 
 
@@ -87,7 +87,7 @@ class TestAsyncScrapeRequestPreparation:
         assert payload["storeInCache"] is False
 
     @pytest.mark.asyncio
-    async def test_scrape_execute_request_and_response_normalization(self):
+    async def test_interact_request_and_response_normalization(self):
         client = _FakeAsyncClient(
             post_response=_FakeAsyncResponse(
                 200,
@@ -99,7 +99,7 @@ class TestAsyncScrapeRequestPreparation:
             ),
             delete_response=_FakeAsyncResponse(200, {"success": True}),
         )
-        response = await scrape_execute(
+        response = await interact(
             client,
             "job-123",
             "console.log('ok')",
@@ -107,7 +107,7 @@ class TestAsyncScrapeRequestPreparation:
             origin="_unit-test",
         )
 
-        assert client.last_post[0] == "/v2/scrape/job-123/execute"
+        assert client.last_post[0] == "/v2/scrape/job-123/interact"
         assert client.last_post[1] == {
             "code": "console.log('ok')",
             "language": "node",
@@ -118,18 +118,18 @@ class TestAsyncScrapeRequestPreparation:
         assert response.exit_code == 0
 
     @pytest.mark.asyncio
-    async def test_scrape_execute_validates_required_inputs(self):
+    async def test_interact_validates_required_inputs(self):
         client = _FakeAsyncClient(
             post_response=_FakeAsyncResponse(200, {"success": True}),
             delete_response=_FakeAsyncResponse(200, {"success": True}),
         )
         with pytest.raises(ValueError, match="Job ID cannot be empty"):
-            await scrape_execute(client, "", "console.log('ok')")
+            await interact(client, "", "console.log('ok')")
         with pytest.raises(ValueError, match="Code cannot be empty"):
-            await scrape_execute(client, "job-123", "   ")
+            await interact(client, "job-123", "   ")
 
     @pytest.mark.asyncio
-    async def test_scrape_execute_raises_when_success_false(self):
+    async def test_interact_raises_when_success_false(self):
         client = _FakeAsyncClient(
             post_response=_FakeAsyncResponse(
                 200,
@@ -141,10 +141,10 @@ class TestAsyncScrapeRequestPreparation:
             delete_response=_FakeAsyncResponse(200, {"success": True}),
         )
         with pytest.raises(Exception, match="Replay context is unavailable"):
-            await scrape_execute(client, "job-123", "console.log('ok')")
+            await interact(client, "job-123", "console.log('ok')")
 
     @pytest.mark.asyncio
-    async def test_delete_scrape_browser_request_and_response_normalization(self):
+    async def test_stop_interactive_browser_request_and_response_normalization(self):
         client = _FakeAsyncClient(
             post_response=_FakeAsyncResponse(200, {"success": True}),
             delete_response=_FakeAsyncResponse(
@@ -156,9 +156,9 @@ class TestAsyncScrapeRequestPreparation:
                 },
             ),
         )
-        response = await delete_scrape_browser(client, "job-123")
+        response = await stop_interactive_browser(client, "job-123")
 
-        assert client.last_delete == "/v2/scrape/job-123/browser"
+        assert client.last_delete == "/v2/scrape/job-123/interact"
         assert response.success is True
         assert response.session_duration_ms == 900
         assert response.credits_billed == 2

@@ -10,15 +10,15 @@ import {
 import {
   Identity,
   idmux,
-  scrapeBrowserDeleteRaw,
-  scrapeExecuteRaw,
+  scrapeStopInteractiveBrowserRaw,
+  scrapeInteractRaw,
   scrapeRaw,
   scrapeTimeout,
 } from "./lib";
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function executeWithReplicaRetry(
+async function interactWithReplicaRetry(
   jobId: string,
   body: {
     code: string;
@@ -28,10 +28,10 @@ async function executeWithReplicaRetry(
   identity: Identity,
   attempts: number = 5,
 ) {
-  let lastResponse: Awaited<ReturnType<typeof scrapeExecuteRaw>> | null = null;
+  let lastResponse: Awaited<ReturnType<typeof scrapeInteractRaw>> | null = null;
 
   for (let i = 0; i < attempts; i += 1) {
-    const response = await scrapeExecuteRaw(jobId, body, identity);
+    const response = await scrapeInteractRaw(jobId, body, identity);
     lastResponse = response;
     if (response.statusCode !== 404) return response;
     await sleep(500);
@@ -40,7 +40,7 @@ async function executeWithReplicaRetry(
   return lastResponse!;
 }
 
-describe("Scrape browser execute replay", () => {
+describe("Scrape browser interact replay", () => {
   let identity: Identity;
   let otherIdentity: Identity;
 
@@ -63,7 +63,7 @@ describe("Scrape browser execute replay", () => {
     (TEST_PRODUCTION || HAS_FIRE_ENGINE);
 
   itIf(canRunReplayHappyPath)(
-    "replays scrape URL/waitFor/actions before execute code",
+    "replays scrape URL/waitFor/actions before interactive code runs",
     async () => {
       const marker = crypto.randomUUID();
       const url = `${TEST_SUITE_WEBSITE}?testId=${crypto.randomUUID()}`;
@@ -90,7 +90,7 @@ describe("Scrape browser execute replay", () => {
         expect(typeof scrapeResponse.body.scrape_id).toBe("string");
         scrapeId = scrapeResponse.body.scrape_id as string;
 
-        const executeResponse = await executeWithReplicaRetry(
+        const executeResponse = await interactWithReplicaRetry(
           scrapeId,
           {
             language: "node",
@@ -108,7 +108,7 @@ describe("Scrape browser execute replay", () => {
         expect(executeResponse.body.stdout).toContain(marker);
       } finally {
         if (scrapeId) {
-          await scrapeBrowserDeleteRaw(scrapeId, identity);
+          await scrapeStopInteractiveBrowserRaw(scrapeId, identity);
         }
       }
     },
@@ -141,7 +141,7 @@ describe("Scrape browser execute replay", () => {
         expect(typeof scrapeResponse.body.scrape_id).toBe("string");
         scrapeId = scrapeResponse.body.scrape_id as string;
 
-        const executeResponse = await executeWithReplicaRetry(
+        const executeResponse = await interactWithReplicaRetry(
           scrapeId,
           {
             language: "node",
@@ -181,7 +181,7 @@ describe("Scrape browser execute replay", () => {
         expect(visibleUrl).toContain(TEST_SUITE_WEBSITE);
       } finally {
         if (scrapeId) {
-          await scrapeBrowserDeleteRaw(scrapeId, identity);
+          await scrapeStopInteractiveBrowserRaw(scrapeId, identity);
         }
       }
     },
@@ -189,7 +189,7 @@ describe("Scrape browser execute replay", () => {
   );
 
   it("returns 400 for invalid scrape job id format", async () => {
-    const response = await scrapeExecuteRaw(
+    const response = await scrapeInteractRaw(
       "not-a-valid-uuid",
       {
         code: "console.log('hi')",
@@ -206,7 +206,7 @@ describe("Scrape browser execute replay", () => {
   });
 
   it("returns 404 when scrape job does not exist", async () => {
-    const response = await scrapeExecuteRaw(
+    const response = await scrapeInteractRaw(
       crypto.randomUUID(),
       {
         code: "console.log('hi')",
@@ -236,7 +236,7 @@ describe("Scrape browser execute replay", () => {
       expect(typeof scrapeResponse.body.scrape_id).toBe("string");
 
       const scrapeId = scrapeResponse.body.scrape_id as string;
-      const executeResponse = await executeWithReplicaRetry(
+      const executeResponse = await interactWithReplicaRetry(
         scrapeId,
         {
           code: "console.log('should fail')",
@@ -269,7 +269,7 @@ describe("Scrape browser execute replay", () => {
       expect(typeof scrapeResponse.body.scrape_id).toBe("string");
 
       const scrapeId = scrapeResponse.body.scrape_id as string;
-      const executeResponse = await executeWithReplicaRetry(
+      const executeResponse = await interactWithReplicaRetry(
         scrapeId,
         {
           code: "console.log('should not run')",

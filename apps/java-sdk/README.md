@@ -171,7 +171,7 @@ Document doc = client.scrape("https://example.com/product",
 System.out.println(doc.getJson());
 ```
 
-#### Scrape-Bound Browser Session
+#### Scrape-Bound Interactive Session
 
 Run browser automation against the page context captured by a scrape job:
 
@@ -179,7 +179,7 @@ Run browser automation against the page context captured by a scrape job:
 Document doc = client.scrape("https://example.com");
 String scrapeId = String.valueOf(doc.getMetadata().get("scrapeId"));
 
-BrowserExecuteResponse exec = client.scrapeExecute(
+BrowserExecuteResponse exec = client.interact(
     scrapeId,
     "console.log(await page.title());",
     "node",
@@ -188,7 +188,7 @@ BrowserExecuteResponse exec = client.scrapeExecute(
 
 System.out.println(exec.getStdout());
 
-BrowserDeleteResponse deleted = client.deleteScrapeBrowser(scrapeId);
+BrowserDeleteResponse deleted = client.stopInteractiveBrowser(scrapeId);
 System.out.println("Deleted: " + deleted.isSuccess());
 ```
 

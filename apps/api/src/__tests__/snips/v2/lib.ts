@@ -104,7 +104,7 @@ export async function scrapeStatus(
   return raw.body.data;
 }
 
-export async function scrapeExecuteRaw(
+export async function scrapeInteractRaw(
   jobId: string,
   body: {
     code: string;
@@ -115,18 +115,18 @@ export async function scrapeExecuteRaw(
   identity: Identity,
 ) {
   return await request(TEST_API_URL)
-    .post("/v2/scrape/" + encodeURIComponent(jobId) + "/execute")
+    .post("/v2/scrape/" + encodeURIComponent(jobId) + "/interact")
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .set("Content-Type", "application/json")
     .send(body);
 }
 
-export async function scrapeBrowserDeleteRaw(
+export async function scrapeStopInteractiveBrowserRaw(
   jobId: string,
   identity: Identity,
 ) {
   return await request(TEST_API_URL)
-    .delete("/v2/scrape/" + encodeURIComponent(jobId) + "/browser")
+    .delete("/v2/scrape/" + encodeURIComponent(jobId) + "/interact")
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .send();
 }
