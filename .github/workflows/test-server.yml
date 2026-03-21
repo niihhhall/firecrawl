@@ -151,14 +151,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-pw-chromium-
 
-      - name: Install Playwright system deps
-        if: matrix.engine == 'playwright'
-        run: pnpm exec playwright install-deps
-        working-directory: ./apps/playwright-service-ts
-
       - name: Install Playwright node modules
         if: matrix.engine == 'playwright'
         run: pnpm install --frozen-lockfile
+        working-directory: ./apps/playwright-service-ts
+
+      - name: Install Playwright system deps
+        if: matrix.engine == 'playwright'
+        run: pnpm exec playwright install-deps
         working-directory: ./apps/playwright-service-ts
 
       - name: Install Playwright Chromium
