@@ -623,8 +623,8 @@ export async function browserListController(
       id: r.id,
       status: r.status,
       cdpUrl: r.cdp_url,
-      liveViewUrl: r.cdp_path, // cdp_path stores the view URL
-      interactiveLiveViewUrl: r.cdp_interactive_path, // cdp_interactive_path stores the interactive view URL
+      liveViewUrl: r.cdp_path,
+      interactiveLiveViewUrl: r.cdp_interactive_path,
       streamWebView: r.stream_web_view,
       createdAt: r.created_at,
       lastActivity: r.updated_at,
