@@ -334,8 +334,11 @@ export async function scrapeStopInteractiveBrowserController(
     return res.status(200).json({ success: true });
   }
 
+  const wallClockMs = Date.now() - new Date(session.created_at).getTime();
   const durationMs =
-    sessionDurationMs ?? Date.now() - new Date(session.created_at).getTime();
+    sessionDurationMs && sessionDurationMs > 0
+      ? sessionDurationMs
+      : wallClockMs;
   const creditsBilled = calculateBrowserSessionCredits(durationMs);
 
   updateBrowserSessionCreditsUsed(session.id, creditsBilled).catch(error => {
