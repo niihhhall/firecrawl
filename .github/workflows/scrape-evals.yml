@@ -39,11 +39,12 @@ jobs:
         with:
           github-token: ${{ secrets.SCRAPE_EVALS_PAT }}
           script: |
-            let prNumber, prBranch, commitSha;
+            let prNumber, prBranch, commitSha, headRepo;
             if (context.eventName === 'pull_request') {
               prNumber = context.payload.pull_request.number;
               prBranch = context.payload.pull_request.head.ref;
               commitSha = context.payload.pull_request.head.sha;
+              headRepo = context.payload.pull_request.head.repo.full_name;
             } else {
               const pr = await github.rest.pulls.get({
                 owner: context.repo.owner,
@@ -53,6 +54,7 @@ jobs:
               prNumber = pr.data.number;
               prBranch = pr.data.head.ref;
               commitSha = pr.data.head.sha;
+              headRepo = pr.data.head.repo.full_name;
             }
             await github.rest.repos.createDispatchEvent({
               owner: 'firecrawl',
@@ -62,7 +64,7 @@ jobs:
                 pr_number: prNumber,
                 pr_branch: prBranch,
                 commit_sha: commitSha,
-                repo: context.repo.owner + '/' + context.repo.repo,
+                repo: headRepo,
               },
             });
 
@@ -99,11 +101,12 @@ jobs:
         with:
           github-token: ${{ secrets.SCRAPE_EVALS_PAT }}
           script: |
-            let prNumber, prBranch, commitSha;
+            let prNumber, prBranch, commitSha, headRepo;
             if (context.eventName === 'pull_request') {
               prNumber = context.payload.pull_request.number;
               prBranch = context.payload.pull_request.head.ref;
               commitSha = context.payload.pull_request.head.sha;
+              headRepo = context.payload.pull_request.head.repo.full_name;
             } else {
               const pr = await github.rest.pulls.get({
                 owner: context.repo.owner,
@@ -113,6 +116,7 @@ jobs:
               prNumber = pr.data.number;
               prBranch = pr.data.head.ref;
               commitSha = pr.data.head.sha;
+              headRepo = pr.data.head.repo.full_name;
             }
             await github.rest.repos.createDispatchEvent({
               owner: 'firecrawl',
@@ -122,6 +126,6 @@ jobs:
                 pr_number: prNumber,
                 pr_branch: prBranch,
                 commit_sha: commitSha,
-                repo: context.repo.owner + '/' + context.repo.repo,
+                repo: headRepo,
               },
             });
