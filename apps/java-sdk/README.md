@@ -82,13 +82,13 @@ Before using the Java SDK, ensure you have the following installed:
 ### Gradle (Kotlin DSL)
 
 ```kotlin
-implementation("com.firecrawl:firecrawl-java:1.0.1")
+implementation("com.firecrawl:firecrawl-java:1.1.1")
 ```
 
 ### Gradle (Groovy)
 
 ```groovy
-implementation 'com.firecrawl:firecrawl-java:1.0.1'
+implementation 'com.firecrawl:firecrawl-java:1.1.1'
 ```
 
 ### Maven
@@ -97,7 +97,7 @@ implementation 'com.firecrawl:firecrawl-java:1.0.1'
 <dependency>
     <groupId>com.firecrawl</groupId>
     <artifactId>firecrawl-java</artifactId>
-    <version>1.0.1</version>
+    <version>1.1.1</version>
 </dependency>
 ```
 
@@ -371,14 +371,14 @@ gradle build
 
 ```bash
 gradle jar
-# Output: build/libs/firecrawl-java-1.0.1.jar
+# Output: build/libs/firecrawl-java-1.1.1.jar
 ```
 
 ### Install Locally
 
 ```bash
 gradle publishToMavenLocal
-# Now available as: com.firecrawl:firecrawl-java:1.0.1 in local Maven repository
+# Now available as: com.firecrawl:firecrawl-java:1.1.1 in local Maven repository
 ```
 
 ## Running Tests
