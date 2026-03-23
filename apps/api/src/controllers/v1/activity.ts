@@ -11,7 +11,13 @@ const VALID_ENDPOINTS = [
   "scrape",
   "crawl",
   "batch_scrape",
+  "search",
+  "extract",
+  "llmstxt",
+  "deep_research",
+  "map",
   "agent",
+  "browser",
 ] as const;
 
 type ActivityEndpoint = (typeof VALID_ENDPOINTS)[number];
