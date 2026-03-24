@@ -24,21 +24,11 @@ import { billTeam } from "../../services/billing/credit_billing";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { logRequest } from "../../services/logging/log_job";
 import { integrationSchema } from "../../utils/integration";
-
-const BROWSER_CREDITS_PER_HOUR = 120;
-const INTERACT_CREDITS_PER_HOUR = 420;
-
-/**
- * Calculate credits to bill for a browser session based on its duration.
- * Prorates to the millisecond. Minimum charge is 2 credits.
- */
-function calculateBrowserSessionCredits(
-  durationMs: number,
-  creditsPerHour = BROWSER_CREDITS_PER_HOUR,
-): number {
-  const hours = durationMs / 3_600_000;
-  return Math.max(2, Math.ceil(hours * creditsPerHour));
-}
+import {
+  BROWSER_CREDITS_PER_HOUR,
+  INTERACT_CREDITS_PER_HOUR,
+  calculateBrowserSessionCredits,
+} from "../../lib/browser-billing";
 
 // ---------------------------------------------------------------------------
 // Zod schemas

@@ -4,26 +4,20 @@ import { jest } from "@jest/globals";
 // Mocks — must come before imports
 // ---------------------------------------------------------------------------
 
-const mockGetValue = jest.fn<() => Promise<string | null>>();
-const mockSetValue = jest.fn<() => Promise<void>>();
-const mockDeleteKey = jest.fn<() => Promise<void>>();
+const mockGetValue = jest.fn<(key: string) => Promise<string | null>>();
+const mockSetValue =
+  jest.fn<(key: string, value: string, ttl: number) => Promise<void>>();
+const mockDeleteKey = jest.fn<(key: string) => Promise<void>>();
 
 jest.mock("../../../services/redis", () => ({
-  getValue: (...args: any[]) => mockGetValue(...args),
-  setValue: (...args: any[]) => mockSetValue(...args),
-  deleteKey: (...args: any[]) => mockDeleteKey(...args),
+  getValue: (key: string) => mockGetValue(key),
+  setValue: (key: string, value: string, ttl: number) =>
+    mockSetValue(key, value, ttl),
+  deleteKey: (key: string) => mockDeleteKey(key),
 }));
 
 jest.mock("../../../services/supabase", () => ({
-  supabase_service: {
-    from: jest.fn(() => ({
-      insert: jest.fn().mockReturnThis(),
-      select: jest.fn().mockReturnThis(),
-      update: jest.fn().mockReturnThis(),
-      eq: jest.fn().mockReturnThis(),
-      single: jest.fn().mockResolvedValue({ data: null, error: null }),
-    })),
-  },
+  supabase_service: {},
   isPostgrestNoRowsError: jest.fn(() => true),
 }));
 
@@ -40,7 +34,7 @@ import {
   calculateBrowserSessionCredits,
   BROWSER_CREDITS_PER_HOUR,
   INTERACT_CREDITS_PER_HOUR,
-} from "../scrape-browser";
+} from "../../../lib/browser-billing";
 
 import {
   markBrowserSessionUsedPrompt,
@@ -86,29 +80,24 @@ describe("calculateBrowserSessionCredits", () => {
     });
 
     it("calculates correctly for 1 minute", () => {
-      const oneMinMs = 60_000;
-      expect(calculateBrowserSessionCredits(oneMinMs)).toBe(2);
+      expect(calculateBrowserSessionCredits(60_000)).toBe(2);
     });
 
     it("calculates correctly for 5 minutes", () => {
-      const fiveMinMs = 5 * 60_000;
-      expect(calculateBrowserSessionCredits(fiveMinMs)).toBe(10);
+      expect(calculateBrowserSessionCredits(5 * 60_000)).toBe(10);
     });
 
     it("calculates correctly for 10 minutes", () => {
-      const tenMinMs = 10 * 60_000;
-      expect(calculateBrowserSessionCredits(tenMinMs)).toBe(20);
+      expect(calculateBrowserSessionCredits(10 * 60_000)).toBe(20);
     });
 
     it("calculates correctly for 1 hour", () => {
-      const oneHourMs = 3_600_000;
-      expect(calculateBrowserSessionCredits(oneHourMs)).toBe(120);
+      expect(calculateBrowserSessionCredits(3_600_000)).toBe(120);
     });
 
     it("rounds up to next integer", () => {
-      const slightlyOverOneMin = 61_000;
       // 61s / 3600s * 120 = 2.033... → ceil = 3
-      expect(calculateBrowserSessionCredits(slightlyOverOneMin)).toBe(3);
+      expect(calculateBrowserSessionCredits(61_000)).toBe(3);
     });
   });
 
@@ -123,41 +112,33 @@ describe("calculateBrowserSessionCredits", () => {
     });
 
     it("calculates 7 credits per minute", () => {
-      const oneMinMs = 60_000;
       expect(
-        calculateBrowserSessionCredits(oneMinMs, INTERACT_CREDITS_PER_HOUR),
+        calculateBrowserSessionCredits(60_000, INTERACT_CREDITS_PER_HOUR),
       ).toBe(7);
     });
 
     it("calculates 35 credits for 5 minutes", () => {
-      const fiveMinMs = 5 * 60_000;
       expect(
-        calculateBrowserSessionCredits(fiveMinMs, INTERACT_CREDITS_PER_HOUR),
+        calculateBrowserSessionCredits(5 * 60_000, INTERACT_CREDITS_PER_HOUR),
       ).toBe(35);
     });
 
     it("calculates 70 credits for 10 minutes", () => {
-      const tenMinMs = 10 * 60_000;
       expect(
-        calculateBrowserSessionCredits(tenMinMs, INTERACT_CREDITS_PER_HOUR),
+        calculateBrowserSessionCredits(10 * 60_000, INTERACT_CREDITS_PER_HOUR),
       ).toBe(70);
     });
 
     it("calculates 420 credits for 1 hour", () => {
-      const oneHourMs = 3_600_000;
       expect(
-        calculateBrowserSessionCredits(oneHourMs, INTERACT_CREDITS_PER_HOUR),
+        calculateBrowserSessionCredits(3_600_000, INTERACT_CREDITS_PER_HOUR),
       ).toBe(420);
     });
 
     it("rounds up to next integer", () => {
-      const thirtyOneSeconds = 31_000;
       // 31s / 3600s * 420 = 3.616... → ceil = 4
       expect(
-        calculateBrowserSessionCredits(
-          thirtyOneSeconds,
-          INTERACT_CREDITS_PER_HOUR,
-        ),
+        calculateBrowserSessionCredits(31_000, INTERACT_CREDITS_PER_HOUR),
       ).toBe(4);
     });
   });
@@ -179,13 +160,12 @@ describe("calculateBrowserSessionCredits", () => {
     });
 
     it("interact rate is 3.5x browser rate for non-trivial durations", () => {
-      const fiveMinMs = 5 * 60_000;
       const browser = calculateBrowserSessionCredits(
-        fiveMinMs,
+        5 * 60_000,
         BROWSER_CREDITS_PER_HOUR,
       );
       const interact = calculateBrowserSessionCredits(
-        fiveMinMs,
+        5 * 60_000,
         INTERACT_CREDITS_PER_HOUR,
       );
       expect(interact / browser).toBe(3.5);
@@ -199,7 +179,7 @@ describe("calculateBrowserSessionCredits", () => {
 
 describe("prompt usage tracking", () => {
   describe("markBrowserSessionUsedPrompt", () => {
-    it("sets Redis flag with TTL", async () => {
+    it("sets Redis flag with 2-hour TTL", async () => {
       await markBrowserSessionUsedPrompt("session-123");
 
       expect(mockSetValue).toHaveBeenCalledWith(
@@ -236,7 +216,7 @@ describe("prompt usage tracking", () => {
       expect(result).toBe(false);
     });
 
-    it("returns false on Redis failure (graceful fallback)", async () => {
+    it("returns false on Redis failure (graceful fallback to browser rate)", async () => {
       mockGetValue.mockRejectedValueOnce(new Error("Redis down"));
 
       const result = await didBrowserSessionUsePrompt("session-123");
@@ -261,48 +241,70 @@ describe("prompt usage tracking", () => {
       ).resolves.not.toThrow();
     });
   });
+});
 
-  describe("billing rate selection", () => {
-    it("uses interact rate when prompt flag is set", async () => {
-      mockGetValue.mockResolvedValueOnce("1");
+// ---------------------------------------------------------------------------
+// Billing rate selection (integration of flag + rate)
+// ---------------------------------------------------------------------------
 
-      const usedPrompt = await didBrowserSessionUsePrompt("session-123");
-      const rate = usedPrompt
-        ? INTERACT_CREDITS_PER_HOUR
-        : BROWSER_CREDITS_PER_HOUR;
-      const credits = calculateBrowserSessionCredits(5 * 60_000, rate);
+describe("billing rate selection", () => {
+  it("uses 420/hr when prompt flag is set", async () => {
+    mockGetValue.mockResolvedValueOnce("1");
 
-      expect(usedPrompt).toBe(true);
-      expect(rate).toBe(420);
-      expect(credits).toBe(35);
-    });
+    const usedPrompt = await didBrowserSessionUsePrompt("session-123");
+    const rate = usedPrompt
+      ? INTERACT_CREDITS_PER_HOUR
+      : BROWSER_CREDITS_PER_HOUR;
+    const credits = calculateBrowserSessionCredits(5 * 60_000, rate);
 
-    it("uses browser rate when no prompt was used", async () => {
-      mockGetValue.mockResolvedValueOnce(null);
+    expect(usedPrompt).toBe(true);
+    expect(rate).toBe(420);
+    expect(credits).toBe(35);
+  });
 
-      const usedPrompt = await didBrowserSessionUsePrompt("session-123");
-      const rate = usedPrompt
-        ? INTERACT_CREDITS_PER_HOUR
-        : BROWSER_CREDITS_PER_HOUR;
-      const credits = calculateBrowserSessionCredits(5 * 60_000, rate);
+  it("uses 120/hr when no prompt was used", async () => {
+    mockGetValue.mockResolvedValueOnce(null);
 
-      expect(usedPrompt).toBe(false);
-      expect(rate).toBe(120);
-      expect(credits).toBe(10);
-    });
+    const usedPrompt = await didBrowserSessionUsePrompt("session-123");
+    const rate = usedPrompt
+      ? INTERACT_CREDITS_PER_HOUR
+      : BROWSER_CREDITS_PER_HOUR;
+    const credits = calculateBrowserSessionCredits(5 * 60_000, rate);
 
-    it("falls back to browser rate when Redis is down", async () => {
-      mockGetValue.mockRejectedValueOnce(new Error("Redis down"));
+    expect(usedPrompt).toBe(false);
+    expect(rate).toBe(120);
+    expect(credits).toBe(10);
+  });
 
-      const usedPrompt = await didBrowserSessionUsePrompt("session-123");
-      const rate = usedPrompt
-        ? INTERACT_CREDITS_PER_HOUR
-        : BROWSER_CREDITS_PER_HOUR;
-      const credits = calculateBrowserSessionCredits(5 * 60_000, rate);
+  it("falls back to 120/hr when Redis is down", async () => {
+    mockGetValue.mockRejectedValueOnce(new Error("Redis down"));
 
-      expect(usedPrompt).toBe(false);
-      expect(rate).toBe(120);
-      expect(credits).toBe(10);
-    });
+    const usedPrompt = await didBrowserSessionUsePrompt("session-123");
+    const rate = usedPrompt
+      ? INTERACT_CREDITS_PER_HOUR
+      : BROWSER_CREDITS_PER_HOUR;
+    const credits = calculateBrowserSessionCredits(5 * 60_000, rate);
+
+    expect(usedPrompt).toBe(false);
+    expect(rate).toBe(120);
+    expect(credits).toBe(10);
+  });
+
+  it("full flow: mark → check → bill → clear", async () => {
+    await markBrowserSessionUsedPrompt("session-456");
+    expect(mockSetValue).toHaveBeenCalledTimes(1);
+
+    mockGetValue.mockResolvedValueOnce("1");
+    const usedPrompt = await didBrowserSessionUsePrompt("session-456");
+    expect(usedPrompt).toBe(true);
+
+    const credits = calculateBrowserSessionCredits(
+      3 * 60_000,
+      INTERACT_CREDITS_PER_HOUR,
+    );
+    expect(credits).toBe(21); // 3 min * 7 credits/min
+
+    await clearBrowserSessionPromptFlag("session-456");
+    expect(mockDeleteKey).toHaveBeenCalledTimes(1);
   });
 });

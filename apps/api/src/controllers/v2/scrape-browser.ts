@@ -42,21 +42,15 @@ import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activit
 import { logRequest } from "../../services/logging/log_job";
 import { integrationSchema } from "../../utils/integration";
 import { supabaseGetScrapeById } from "../../lib/supabase-jobs";
+import {
+  BROWSER_CREDITS_PER_HOUR,
+  INTERACT_CREDITS_PER_HOUR,
+  calculateBrowserSessionCredits,
+} from "../../lib/browser-billing";
 
 // ---------------------------------------------------------------------------
-// Constants & schemas
+// Schemas
 // ---------------------------------------------------------------------------
-
-export const BROWSER_CREDITS_PER_HOUR = 120;
-export const INTERACT_CREDITS_PER_HOUR = 420;
-
-export function calculateBrowserSessionCredits(
-  durationMs: number,
-  creditsPerHour = BROWSER_CREDITS_PER_HOUR,
-): number {
-  const hours = durationMs / 3_600_000;
-  return Math.max(2, Math.ceil(hours * creditsPerHour));
-}
 
 const browserCreateRequestSchema = z.object({
   ttl: z.number().min(30).max(3600).default(600),
