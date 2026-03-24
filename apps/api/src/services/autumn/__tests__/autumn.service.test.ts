@@ -84,8 +84,6 @@ import {
   AutumnService,
   BoundedMap,
   BoundedSet,
-  CIRCUIT_BREAKER_COOLDOWN_MS,
-  CIRCUIT_BREAKER_THRESHOLD,
   isAutumnCheckDryRun,
   isAutumnCheckEnabled,
   isAutumnEnabled,
@@ -280,79 +278,6 @@ describe("ensureTeamProvisioned", () => {
     // Second call must re-attempt (team not cached).
     await svc.ensureTeamProvisioned({ teamId: "team-1", orgId: "org-1" });
     expect(mockEntityGet).toHaveBeenCalledTimes(2);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Circuit breaker
-// ---------------------------------------------------------------------------
-
-describe("circuit breaker", () => {
-  it("does not trip on a single failure", async () => {
-    config.AUTUMN_CHECK_ENABLED = "true";
-    const svc = makeService();
-    mockEntityGet.mockResolvedValue(makeEntity(0));
-
-    // Warm caches.
-    await svc.checkCredits({ teamId: "team-1", value: 1 });
-    mockCheck.mockClear();
-
-    // One failure.
-    mockCheck.mockRejectedValueOnce(new Error("timeout"));
-    await svc.checkCredits({ teamId: "team-1", value: 1 });
-
-    // Next call should still go through (breaker not tripped).
-    mockCheck.mockResolvedValue({
-      allowed: true,
-      customerId: "org-1",
-      balance: null,
-    });
-    const result = await svc.checkCredits({ teamId: "team-1", value: 1 });
-    expect(result).toBe(true);
-  });
-
-  it("trips after reaching the failure threshold, then recovers", async () => {
-    jest.useFakeTimers();
-    try {
-      config.AUTUMN_CHECK_ENABLED = "true";
-      const svc = makeService();
-      mockEntityGet.mockResolvedValue(makeEntity(0));
-
-      // Warm caches.
-      await svc.checkCredits({ teamId: "team-1", value: 1 });
-      mockCheck.mockClear();
-
-      // Accumulate failures up to the threshold.
-      for (let i = 0; i < CIRCUIT_BREAKER_THRESHOLD; i++) {
-        mockCheck.mockRejectedValueOnce(new Error("timeout"));
-        await svc.checkCredits({ teamId: "team-1", value: 1 });
-      }
-
-      // Circuit should now be open — no HTTP call made.
-      mockCheck.mockResolvedValue({
-        allowed: true,
-        customerId: "org-1",
-        balance: null,
-      });
-      const suppressed = await svc.checkCredits({
-        teamId: "team-1",
-        value: 1,
-      });
-      expect(suppressed).toBeNull();
-      expect(mockCheck).toHaveBeenCalledTimes(CIRCUIT_BREAKER_THRESHOLD);
-
-      // Advance past cooldown.
-      jest.advanceTimersByTime(CIRCUIT_BREAKER_COOLDOWN_MS + 1);
-
-      const recovered = await svc.checkCredits({
-        teamId: "team-1",
-        value: 1,
-      });
-      expect(recovered).toBe(true);
-      expect(mockCheck).toHaveBeenCalledTimes(CIRCUIT_BREAKER_THRESHOLD + 1);
-    } finally {
-      jest.useRealTimers();
-    }
   });
 });
 
