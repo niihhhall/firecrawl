@@ -409,7 +409,7 @@ async function supaBillTeam(
   }
 
   // If subscription_id is not known, tell the RPC to look it up
-  const shouldFetchSubscription = fetch_subscription || subscription_id == null;
+  const shouldFetchSubscription = fetch_subscription;
 
   _logger.info(`Batch billing team ${team_id} for ${credits} credits`, {
     fetch_subscription: shouldFetchSubscription,
