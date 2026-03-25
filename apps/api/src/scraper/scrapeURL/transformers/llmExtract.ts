@@ -29,21 +29,18 @@ import { hasFormatOfType } from "../../../lib/format-utils";
 /**
  * Strip NUL bytes (\u0000) from LLM output to prevent downstream issues
  * (e.g. PostgreSQL text columns reject NUL bytes).
- * Handles strings, arrays, and plain objects recursively.
+ * Handles strings, arrays, and plain objects via JSON replacer.
  */
 function removeNulBytes<T>(value: T): T {
   if (typeof value === "string") {
     return value.replace(/\u0000/g, "") as unknown as T;
   }
-  if (Array.isArray(value)) {
-    return value.map(removeNulBytes) as unknown as T;
-  }
   if (value !== null && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) {
-      out[k] = removeNulBytes(v);
-    }
-    return out as T;
+    return JSON.parse(
+      JSON.stringify(value, (_, v) =>
+        typeof v === "string" ? v.replace(/\u0000/g, "") : v,
+      ),
+    );
   }
   return value;
 }
