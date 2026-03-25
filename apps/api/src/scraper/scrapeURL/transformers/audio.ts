@@ -25,7 +25,11 @@ async function getSupportedUrlRegex(): Promise<RegExp> {
     throw new Error("Audio service returned invalid supported URL patterns");
   }
 
-  cachedUrlRegex = new RegExp(data.regex);
+  try {
+    cachedUrlRegex = new RegExp(data.regex);
+  } catch {
+    throw new Error("Audio service returned invalid supported URL patterns");
+  }
   cacheTimestamp = Date.now();
   return cachedUrlRegex;
 }
