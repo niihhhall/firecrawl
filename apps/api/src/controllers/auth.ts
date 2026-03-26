@@ -180,9 +180,13 @@ async function resolveOAuthToken(
   const cacheKey = `oauth_token:${tokenHash}`;
   const cached = await getValue(cacheKey);
   if (cached !== null) {
-    const parsed = JSON.parse(cached);
-    if (!parsed.active) return null;
-    return parsed;
+    try {
+      const parsed = JSON.parse(cached);
+      if (!parsed.active) return null;
+      return parsed;
+    } catch {
+      // Corrupt cache entry — treat as a miss
+    }
   }
 
   try {
@@ -196,7 +200,9 @@ async function resolveOAuthToken(
     });
 
     if (!response.ok) {
-      logger.error(`OAuth introspection returned ${response.status}`);
+      logger.error("OAuth introspection request failed", {
+        status: response.status,
+      });
       return null;
     }
 
@@ -219,7 +225,7 @@ async function resolveOAuthToken(
 
     return data.active ? data : null;
   } catch (error) {
-    logger.error(`OAuth introspection error: ${error}`);
+    logger.error("OAuth introspection error", { error });
     return null;
   }
 }
