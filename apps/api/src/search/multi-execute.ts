@@ -1,5 +1,5 @@
 import type { Logger } from "winston";
-import { SearchV2Response } from "../lib/entities";
+import { WebSearchResult, SearchV2Response } from "../lib/entities";
 import { ScrapeOptions } from "../controllers/v2/types";
 import {
   getItemsToScrape,
@@ -19,14 +19,30 @@ interface MultiSearchQuery {
   limit: number;
 }
 
+export interface DecomposedQueryResult {
+  query: string;
+  results: WebSearchResult[];
+}
+
+export interface MultiSearchExecuteResult {
+  originalQuery: string;
+  queries: DecomposedQueryResult[];
+  totalResultsCount: number;
+  searchCredits: number;
+  scrapeCredits: number;
+  totalCredits: number;
+  shouldScrape: boolean;
+}
+
 export async function executeMultiSearch(
+  originalQuery: string,
   queries: MultiSearchQuery[],
   baseOptions: Omit<SearchOptions, "query" | "limit" | "scrapeOptions">,
   scrapeOptions: ScrapeOptions | undefined,
   context: SearchContext,
   totalLimit: number,
   logger: Logger,
-): Promise<SearchExecuteResult> {
+): Promise<MultiSearchExecuteResult> {
   logger.info("Starting multi-search execution", {
     queryCount: queries.length,
     totalLimit,
@@ -49,38 +65,79 @@ export async function executeMultiSearch(
     ),
   );
 
-  const subResults: SearchExecuteResult[] = [];
-  for (const result of settled) {
-    if (result.status === "fulfilled") {
-      subResults.push(result.value);
+  // Collect results, track which query they belong to
+  const queryResults: DecomposedQueryResult[] = [];
+  const seenUrls = new Set<string>();
+  let searchCredits = 0;
+  let totalResultsCount = 0;
+
+  for (let i = 0; i < settled.length; i++) {
+    const s = settled[i];
+    if (s.status === "fulfilled") {
+      searchCredits += s.value.searchCredits;
+
+      // Dedup within and across queries
+      const dedupedResults: WebSearchResult[] = [];
+      for (const item of s.value.response.web ?? []) {
+        const norm = normalizeUrl(item.url);
+        if (!seenUrls.has(norm)) {
+          seenUrls.add(norm);
+          dedupedResults.push(item);
+        }
+      }
+
+      queryResults.push({
+        query: queries[i].query,
+        results: dedupedResults,
+      });
+      totalResultsCount += dedupedResults.length;
     } else {
       logger.warn("Sub-query failed, continuing with remaining results", {
-        error: result.reason?.message,
+        error: s.reason?.message,
+        query: queries[i].query,
+      });
+      // Still include the query with empty results
+      queryResults.push({
+        query: queries[i].query,
+        results: [],
       });
     }
   }
 
-  if (subResults.length === 0) {
-    // All sub-queries failed — rethrow the first error
+  if (totalResultsCount === 0 && settled.every(s => s.status === "rejected")) {
     const firstRejected = settled.find(
       r => r.status === "rejected",
     ) as PromiseRejectedResult;
     throw firstRejected.reason;
   }
 
-  // Merge and deduplicate results
-  const merged = mergeAndDedup(subResults, totalLimit);
+  // Apply top-level limit across all queries
+  let remaining = totalLimit;
+  for (const qr of queryResults) {
+    if (remaining <= 0) {
+      qr.results = [];
+    } else if (qr.results.length > remaining) {
+      qr.results = qr.results.slice(0, remaining);
+    }
+    remaining -= qr.results.length;
+  }
 
-  // Sum search credits from all sub-queries
-  const searchCredits = subResults.reduce((sum, r) => sum + r.searchCredits, 0);
+  // Recalculate after limit
+  totalResultsCount = queryResults.reduce(
+    (sum, qr) => sum + qr.results.length,
+    0,
+  );
+
+  // Single scrape pass on all unique results across queries
   let scrapeCredits = 0;
-
-  // Single scrape pass on merged+deduped results
   const shouldScrape =
     scrapeOptions?.formats && scrapeOptions.formats.length > 0;
 
   if (shouldScrape && scrapeOptions) {
-    const itemsToScrape = getItemsToScrape(merged, context.flags);
+    // Collect all results into a temporary SearchV2Response for scraping
+    const allResults = queryResults.flatMap(qr => qr.results);
+    const tempResponse: SearchV2Response = { web: allResults };
+    const itemsToScrape = getItemsToScrape(tempResponse, context.flags);
 
     if (itemsToScrape.length > 0) {
       const scrapeOpts = {
@@ -103,18 +160,17 @@ export async function executeMultiSearch(
         context.flags,
       );
 
-      mergeScrapedContent(merged, itemsToScrape, allDocsWithCostTracking);
+      mergeScrapedContent(tempResponse, itemsToScrape, allDocsWithCostTracking);
       scrapeCredits = calculateScrapeCredits(allDocsWithCostTracking);
+
+      // The scrape mutated the items in-place via tempResponse.web,
+      // which are the same object references in queryResults
     }
   }
 
-  const totalResultsCount =
-    (merged.web?.length ?? 0) +
-    (merged.images?.length ?? 0) +
-    (merged.news?.length ?? 0);
-
   return {
-    response: merged,
+    originalQuery,
+    queries: queryResults,
     totalResultsCount,
     searchCredits,
     scrapeCredits,
@@ -127,74 +183,9 @@ function normalizeUrl(url: string): string {
   try {
     const u = new URL(url);
     u.hostname = u.hostname.toLowerCase();
-    // Strip trailing slash
     u.pathname = u.pathname.replace(/\/+$/, "") || "/";
     return u.toString();
   } catch {
     return url;
   }
-}
-
-function mergeAndDedup(
-  results: SearchExecuteResult[],
-  totalLimit: number,
-): SearchV2Response {
-  const seenUrls = new Set<string>();
-  const merged: SearchV2Response = {};
-
-  // Merge web results
-  const allWeb = results.flatMap(r => r.response.web ?? []);
-  if (allWeb.length > 0) {
-    merged.web = [];
-    for (const item of allWeb) {
-      const norm = normalizeUrl(item.url);
-      if (!seenUrls.has(norm)) {
-        seenUrls.add(norm);
-        merged.web.push(item);
-      }
-    }
-    if (merged.web.length > totalLimit) {
-      merged.web = merged.web.slice(0, totalLimit);
-    }
-  }
-
-  // Merge news results
-  const allNews = results.flatMap(r => r.response.news ?? []);
-  if (allNews.length > 0) {
-    merged.news = [];
-    const seenNewsUrls = new Set<string>();
-    for (const item of allNews) {
-      if (!item.url) {
-        merged.news.push(item);
-        continue;
-      }
-      const norm = normalizeUrl(item.url);
-      if (!seenNewsUrls.has(norm) && !seenUrls.has(norm)) {
-        seenNewsUrls.add(norm);
-        merged.news.push(item);
-      }
-    }
-    if (merged.news.length > totalLimit) {
-      merged.news = merged.news.slice(0, totalLimit);
-    }
-  }
-
-  // Merge image results
-  const allImages = results.flatMap(r => r.response.images ?? []);
-  if (allImages.length > 0) {
-    merged.images = [];
-    const seenImageUrls = new Set<string>();
-    for (const item of allImages) {
-      const key = item.imageUrl ?? item.url ?? "";
-      if (!key || !seenImageUrls.has(key)) {
-        if (key) seenImageUrls.add(key);
-        merged.images.push(item);
-      }
-    }
-    if (merged.images.length > totalLimit) {
-      merged.images = merged.images.slice(0, totalLimit);
-    }
-  }
-
-  return merged;
 }

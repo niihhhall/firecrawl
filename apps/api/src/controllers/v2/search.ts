@@ -131,7 +131,6 @@ export async function searchController(
     };
 
     const decomposition = req.body.decomposition;
-    let result;
 
     if (decomposition) {
       const numQueries =
@@ -150,7 +149,8 @@ export async function searchController(
         limit: searchesPerQuery,
       }));
 
-      result = await executeMultiSearch(
+      const multiResult = await executeMultiSearch(
+        req.body.query,
         subQueries,
         {
           tbs: req.body.tbs,
@@ -168,26 +168,89 @@ export async function searchController(
         req.body.limit,
         logger,
       );
-    } else {
-      result = await executeSearch(
+
+      if (!isSearchPreview && shouldBill) {
+        billTeam(
+          req.auth.team_id,
+          req.acuc?.sub_id ?? undefined,
+          multiResult.searchCredits,
+          req.acuc?.api_key_id ?? null,
+          billing,
+        ).catch(error =>
+          logger.error(
+            `Failed to bill team ${req.acuc?.sub_id} for ${multiResult.searchCredits} credits: ${error}`,
+          ),
+        );
+      }
+
+      const endTime = new Date().getTime();
+      const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
+
+      logSearch(
         {
+          id: jobId,
+          request_id: agentRequestId ?? jobId,
           query: req.body.query,
-          limit: req.body.limit,
-          tbs: req.body.tbs,
-          filter: req.body.filter,
-          lang: req.body.lang,
-          country: req.body.country,
-          location: req.body.location,
-          sources: req.body.sources as Array<{ type: string }>,
-          categories: req.body.categories as CategoryOption[],
-          enterprise: req.body.enterprise,
-          scrapeOptions: req.body.scrapeOptions,
-          timeout: req.body.timeout,
+          is_successful: true,
+          error: undefined,
+          results: multiResult.queries as any,
+          num_results: multiResult.totalResultsCount,
+          time_taken: timeTakenInSeconds,
+          team_id: req.auth.team_id,
+          options: req.body,
+          credits_cost: shouldBill ? multiResult.searchCredits : 0,
+          zeroDataRetention: isZDROrAnon ?? false,
         },
-        searchContext,
-        logger,
+        false,
       );
+
+      const totalRequestTime = new Date().getTime() - middlewareStartTime;
+      const controllerTime = new Date().getTime() - controllerStartTime;
+
+      logger.info("Request metrics", {
+        version: "v2",
+        jobId,
+        mode: "search",
+        middlewareStartTime,
+        controllerStartTime,
+        middlewareTime,
+        controllerTime,
+        totalRequestTime,
+        searchCredits: multiResult.searchCredits,
+        scrapeCredits: multiResult.scrapeCredits,
+        totalCredits: multiResult.totalCredits,
+        scrapeful: multiResult.shouldScrape,
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          originalQuery: multiResult.originalQuery,
+          queries: multiResult.queries,
+        },
+        creditsUsed: multiResult.totalCredits,
+        id: jobId,
+      } as any);
     }
+
+    const result = await executeSearch(
+      {
+        query: req.body.query,
+        limit: req.body.limit,
+        tbs: req.body.tbs,
+        filter: req.body.filter,
+        lang: req.body.lang,
+        country: req.body.country,
+        location: req.body.location,
+        sources: req.body.sources as Array<{ type: string }>,
+        categories: req.body.categories as CategoryOption[],
+        enterprise: req.body.enterprise,
+        scrapeOptions: req.body.scrapeOptions,
+        timeout: req.body.timeout,
+      },
+      searchContext,
+      logger,
+    );
 
     // Bill team for search credits only (scrape jobs bill themselves)
     if (!isSearchPreview && shouldBill) {

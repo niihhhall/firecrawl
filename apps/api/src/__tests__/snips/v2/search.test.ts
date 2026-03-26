@@ -273,9 +273,9 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
 
   // Query decomposition tests (sequential to avoid DDG rate limits)
   itIf(HAS_AI)(
-    "auto decomposition returns results",
+    "auto decomposition returns grouped results",
     async () => {
-      const res = await search(
+      const raw = await searchRaw(
         {
           query: "web scraping best practices",
           decomposition: "auto",
@@ -283,9 +283,21 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
         },
         identity,
       );
-      expect(res.web).toBeDefined();
-      expect(res.web?.length).toBeGreaterThan(0);
-      expect(res.web?.length).toBeLessThanOrEqual(5);
+      expect(raw.statusCode).toBe(200);
+      const data = raw.body.data;
+      expect(data.originalQuery).toBe("web scraping best practices");
+      expect(data.queries).toBeDefined();
+      expect(data.queries.length).toBeGreaterThanOrEqual(2);
+      for (const q of data.queries) {
+        expect(q.query).toBeDefined();
+        expect(Array.isArray(q.results)).toBe(true);
+      }
+      const totalResults = data.queries.reduce(
+        (sum: number, q: any) => sum + q.results.length,
+        0,
+      );
+      expect(totalResults).toBeGreaterThan(0);
+      expect(totalResults).toBeLessThanOrEqual(5);
     },
     120000,
   );
@@ -293,7 +305,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
   itIf(HAS_AI)(
     "manual decomposition with numQueries and searchesPerQuery",
     async () => {
-      const res = await search(
+      const raw = await searchRaw(
         {
           query: "javascript testing frameworks",
           decomposition: { numQueries: 2, searchesPerQuery: 2 },
@@ -301,9 +313,16 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
         },
         identity,
       );
-      expect(res.web).toBeDefined();
-      expect(res.web?.length).toBeGreaterThan(0);
-      expect(res.web?.length).toBeLessThanOrEqual(5);
+      expect(raw.statusCode).toBe(200);
+      const data = raw.body.data;
+      expect(data.originalQuery).toBe("javascript testing frameworks");
+      expect(data.queries.length).toBe(2);
+      const totalResults = data.queries.reduce(
+        (sum: number, q: any) => sum + q.results.length,
+        0,
+      );
+      expect(totalResults).toBeGreaterThan(0);
+      expect(totalResults).toBeLessThanOrEqual(5);
     },
     120000,
   );
@@ -311,7 +330,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
   itIf(HAS_AI)(
     "decomposition deduplicates results by URL",
     async () => {
-      const res = await search(
+      const raw = await searchRaw(
         {
           query: "python web scraping tutorial",
           decomposition: { numQueries: 2, searchesPerQuery: 3 },
@@ -319,10 +338,12 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
         },
         identity,
       );
-      expect(res.web).toBeDefined();
-      const urls = res.web?.map(r => r.url) ?? [];
-      const uniqueUrls = new Set(urls);
-      expect(urls.length).toBe(uniqueUrls.size);
+      expect(raw.statusCode).toBe(200);
+      const allUrls = raw.body.data.queries.flatMap((q: any) =>
+        q.results.map((r: any) => r.url),
+      );
+      const uniqueUrls = new Set(allUrls);
+      expect(allUrls.length).toBe(uniqueUrls.size);
     },
     120000,
   );
@@ -333,7 +354,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       const raw = await searchRaw(
         {
           query: "firecrawl",
-          decomposition: { numQueries: 10 },
+          decomposition: { numQueries: 11 },
         } as any,
         identity,
       );
