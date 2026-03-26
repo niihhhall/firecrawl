@@ -60,6 +60,10 @@ const configSchema = z.object({
   SEARCH_PREVIEW_TOKEN: z.string().optional(),
   SEARCH_SERVICE_API_SECRET: z.string().optional(),
 
+  // OAuth token introspection
+  OAUTH_INTROSPECT_URL: z.string().optional(),
+  OAUTH_INTROSPECT_SECRET: z.string().optional(),
+
   // Database & Storage
   POSTGRES_HOST: z.string().default("localhost"),
   POSTGRES_PORT: z.string().default("5432"),
