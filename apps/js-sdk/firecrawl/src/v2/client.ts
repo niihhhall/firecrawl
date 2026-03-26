@@ -185,7 +185,10 @@ export class FirecrawlClient {
    * @param req Additional search options (sources, limit, scrapeOptions, etc.).
    * @returns Structured search results.
    */
-  async search(query: string, req: Omit<SearchRequest, "query"> = {}): Promise<SearchData | DecomposedSearchData> {
+  async search(query: string | string[], req: Omit<SearchRequest, "query" | "queries"> = {}): Promise<SearchData | DecomposedSearchData> {
+    if (Array.isArray(query)) {
+      return search(this.http, { queries: query, ...req });
+    }
     return search(this.http, { query, ...req });
   }
 

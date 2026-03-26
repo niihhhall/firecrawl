@@ -264,7 +264,7 @@ export async function x402SearchController(
       team_id: req.auth.team_id,
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
-      target_hint: req.body.query,
+      target_hint: req.body.query!,
       zeroDataRetention: false, // not supported for x402 search
       api_key_id: req.acuc?.api_key_id ?? null,
     });
@@ -282,7 +282,7 @@ export async function x402SearchController(
 
     // Build search query with category filters
     const { query: searchQuery, categoryMap } = buildSearchQuery(
-      req.body.query,
+      req.body.query!,
       req.body.categories as CategoryOption[],
     );
 
@@ -532,7 +532,7 @@ export async function x402SearchController(
           {
             id: jobId,
             request_id: jobId,
-            query: req.body.query,
+            query: req.body.query!,
             is_successful: true,
             error: undefined,
             results: searchResponse as any,
@@ -621,7 +621,7 @@ export async function x402SearchController(
       {
         id: jobId,
         request_id: jobId,
-        query: req.body.query,
+        query: req.body.query!,
         is_successful: true,
         error: undefined,
         results: searchResponse as any,

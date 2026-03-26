@@ -271,7 +271,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
     60000,
   );
 
-  // Query decomposition tests (sequential to avoid DDG rate limits)
+  // Query decomposition tests
   itIf(HAS_AI)(
     "auto decomposition returns grouped results",
     async () => {
@@ -356,6 +356,57 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
           query: "firecrawl",
           decomposition: { numQueries: 11 },
         } as any,
+        identity,
+      );
+      expect(raw.statusCode).toBe(400);
+    },
+    60000,
+  );
+
+  // Multi-query tests
+  it(
+    "multi-query returns grouped results",
+    async () => {
+      const raw = await searchRaw(
+        {
+          queries: ["apple stock price", "nvidia stock price"],
+          limit: 3,
+        } as any,
+        identity,
+      );
+      expect(raw.statusCode).toBe(200);
+      const data = raw.body.data;
+      expect(data.queries).toBeDefined();
+      expect(data.queries.length).toBe(2);
+      expect(data.queries[0].query).toBe("apple stock price");
+      expect(data.queries[1].query).toBe("nvidia stock price");
+      for (const q of data.queries) {
+        expect(q.results.length).toBeLessThanOrEqual(3);
+      }
+    },
+    120000,
+  );
+
+  it.concurrent(
+    "rejects both query and queries",
+    async () => {
+      const raw = await searchRaw(
+        {
+          query: "test",
+          queries: ["test1", "test2"],
+        } as any,
+        identity,
+      );
+      expect(raw.statusCode).toBe(400);
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "rejects missing query and queries",
+    async () => {
+      const raw = await searchRaw(
+        { limit: 5 } as any,
         identity,
       );
       expect(raw.statusCode).toBe(400);

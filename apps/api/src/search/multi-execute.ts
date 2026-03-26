@@ -25,7 +25,7 @@ export interface DecomposedQueryResult {
 }
 
 export interface MultiSearchExecuteResult {
-  originalQuery: string;
+  originalQuery?: string;
   queries: DecomposedQueryResult[];
   totalResultsCount: number;
   searchCredits: number;
@@ -35,7 +35,7 @@ export interface MultiSearchExecuteResult {
 }
 
 export async function executeMultiSearch(
-  originalQuery: string,
+  originalQuery: string | undefined,
   queries: MultiSearchQuery[],
   baseOptions: Omit<SearchOptions, "query" | "limit" | "scrapeOptions">,
   scrapeOptions: ScrapeOptions | undefined,

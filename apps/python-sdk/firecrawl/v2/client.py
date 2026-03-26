@@ -263,7 +263,7 @@ class FirecrawlClient:
 
     def search(
         self,
-        query: str,
+        query: Union[str, List[str]],
         *,
         sources: Optional[List[SourceOption]] = None,
         categories: Optional[List[CategoryOption]] = None,
@@ -278,31 +278,44 @@ class FirecrawlClient:
     ):
         """
         Search for documents.
-        
+
         Args:
-            query: Search query string
-            limit: Maximum number of results to return (default: 5)
+            query: Search query string, or list of query strings for multi-search
+            limit: Maximum number of results per query (default: 5)
             tbs: Time-based search filter
             location: Location string for search
             timeout: Request timeout in milliseconds (default: 300000)
-            page_options: Options for scraping individual pages
-            
+
         Returns:
-            SearchData containing the search results
+            SearchData or DecomposedSearchData containing the search results
         """
-        request = SearchRequest(
-            query=query,
-            sources=sources,
-            categories=categories,
-            limit=limit,
-            tbs=tbs,
-            location=location,
-            ignore_invalid_urls=ignore_invalid_urls,
-            timeout=timeout,
-            decomposition=decomposition,
-            scrape_options=scrape_options,
-            integration=integration,
-        )
+        if isinstance(query, list):
+            request = SearchRequest(
+                queries=query,
+                sources=sources,
+                categories=categories,
+                limit=limit,
+                tbs=tbs,
+                location=location,
+                ignore_invalid_urls=ignore_invalid_urls,
+                timeout=timeout,
+                scrape_options=scrape_options,
+                integration=integration,
+            )
+        else:
+            request = SearchRequest(
+                query=query,
+                sources=sources,
+                categories=categories,
+                limit=limit,
+                tbs=tbs,
+                location=location,
+                ignore_invalid_urls=ignore_invalid_urls,
+                timeout=timeout,
+                decomposition=decomposition,
+                scrape_options=scrape_options,
+                integration=integration,
+            )
 
         return search_module.search(self.http_client, request)
     

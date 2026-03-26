@@ -1632,7 +1632,8 @@ const pdfCategoryOptions = z.strictObject({
 
 export const searchRequestSchema = z
   .strictObject({
-    query: z.string(),
+    query: z.string().optional(),
+    queries: z.array(z.string()).min(1).max(10).optional(),
     limit: z.int().positive().finite().max(100).optional().prefault(10),
     tbs: z.string().optional(),
     filter: z.string().optional(),
@@ -1729,6 +1730,18 @@ export const searchRequestSchema = z
       .optional(),
   })
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
+  .refine(
+    x => x.query || x.queries,
+    { message: "Either 'query' or 'queries' must be provided" },
+  )
+  .refine(
+    x => !(x.query && x.queries),
+    { message: "Cannot provide both 'query' and 'queries'" },
+  )
+  .refine(
+    x => !(x.queries && x.decomposition),
+    { message: "Cannot use 'decomposition' with 'queries' — queries are already explicit" },
+  )
   .transform(x => {
     const country =
       x.country !== undefined ? x.country : x.location ? undefined : "us";

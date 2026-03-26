@@ -112,7 +112,7 @@ export async function searchController(
         team_id: req.auth.team_id,
         origin: req.body.origin ?? "api",
         integration: req.body.integration,
-        target_hint: req.body.query,
+        target_hint: (req.body.query ?? req.body.queries?.join(" | "))!,
         zeroDataRetention: isZDROrAnon ?? false,
         api_key_id: req.acuc?.api_key_id ?? null,
       });
@@ -139,7 +139,7 @@ export async function searchController(
         decomposition === "auto" ? 5 : (decomposition.searchesPerQuery ?? 5);
 
       const decomposed = await decomposeQuery(
-        req.body.query,
+        req.body.query!,
         numQueries,
         logger,
       );
@@ -150,7 +150,7 @@ export async function searchController(
       }));
 
       const multiResult = await executeMultiSearch(
-        req.body.query,
+        req.body.query!,
         subQueries,
         {
           tbs: req.body.tbs,
@@ -190,7 +190,7 @@ export async function searchController(
         {
           id: jobId,
           request_id: agentRequestId ?? jobId,
-          query: req.body.query,
+          query: req.body.query!,
           is_successful: true,
           error: undefined,
           results: multiResult.queries as any,
@@ -233,9 +233,99 @@ export async function searchController(
       } as any);
     }
 
+    // Multi-query: explicit queries array, no LLM
+    if (req.body.queries) {
+      const subQueries = req.body.queries.map((q: string) => ({
+        query: q,
+        limit: req.body.limit,
+      }));
+
+      const multiResult = await executeMultiSearch(
+        undefined,
+        subQueries,
+        {
+          tbs: req.body.tbs,
+          filter: req.body.filter,
+          lang: req.body.lang,
+          country: req.body.country,
+          location: req.body.location,
+          sources: req.body.sources as Array<{ type: string }>,
+          categories: req.body.categories as CategoryOption[],
+          enterprise: req.body.enterprise,
+          timeout: req.body.timeout,
+        },
+        req.body.scrapeOptions,
+        searchContext,
+        req.body.limit * req.body.queries.length,
+        logger,
+      );
+
+      if (!isSearchPreview && shouldBill) {
+        billTeam(
+          req.auth.team_id,
+          req.acuc?.sub_id ?? undefined,
+          multiResult.searchCredits,
+          req.acuc?.api_key_id ?? null,
+          billing,
+        ).catch(error =>
+          logger.error(
+            `Failed to bill team ${req.acuc?.sub_id} for ${multiResult.searchCredits} credits: ${error}`,
+          ),
+        );
+      }
+
+      const endTime = new Date().getTime();
+      const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
+
+      logSearch(
+        {
+          id: jobId,
+          request_id: agentRequestId ?? jobId,
+          query: req.body.queries.join(" | "),
+          is_successful: true,
+          error: undefined,
+          results: multiResult.queries as any,
+          num_results: multiResult.totalResultsCount,
+          time_taken: timeTakenInSeconds,
+          team_id: req.auth.team_id,
+          options: req.body,
+          credits_cost: shouldBill ? multiResult.searchCredits : 0,
+          zeroDataRetention: isZDROrAnon ?? false,
+        },
+        false,
+      );
+
+      const totalRequestTime = new Date().getTime() - middlewareStartTime;
+      const controllerTime = new Date().getTime() - controllerStartTime;
+
+      logger.info("Request metrics", {
+        version: "v2",
+        jobId,
+        mode: "search",
+        middlewareStartTime,
+        controllerStartTime,
+        middlewareTime,
+        controllerTime,
+        totalRequestTime,
+        searchCredits: multiResult.searchCredits,
+        scrapeCredits: multiResult.scrapeCredits,
+        totalCredits: multiResult.totalCredits,
+        scrapeful: multiResult.shouldScrape,
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          queries: multiResult.queries,
+        },
+        creditsUsed: multiResult.totalCredits,
+        id: jobId,
+      } as any);
+    }
+
     const result = await executeSearch(
       {
-        query: req.body.query,
+        query: req.body.query!,
         limit: req.body.limit,
         tbs: req.body.tbs,
         filter: req.body.filter,
@@ -274,7 +364,7 @@ export async function searchController(
       {
         id: jobId,
         request_id: agentRequestId ?? jobId,
-        query: req.body.query,
+        query: req.body.query!,
         is_successful: true,
         error: undefined,
         results: result.response as any,

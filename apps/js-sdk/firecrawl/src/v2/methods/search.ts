@@ -4,12 +4,14 @@ import { ensureValidScrapeOptions } from "../utils/validation";
 import { throwForBadResponse, normalizeAxiosError } from "../utils/errorHandler";
 
 function prepareSearchPayload(req: SearchRequest): Record<string, unknown> {
-  if (!req.query || !req.query.trim()) throw new Error("Query cannot be empty");
+  if (!req.query && !req.queries) throw new Error("Either 'query' or 'queries' must be provided");
+  if (req.query && req.queries) throw new Error("Cannot provide both 'query' and 'queries'");
+  if (req.query && !req.query.trim()) throw new Error("Query cannot be empty");
   if (req.limit != null && req.limit <= 0) throw new Error("limit must be positive");
   if (req.timeout != null && req.timeout <= 0) throw new Error("timeout must be positive");
-  const payload: Record<string, unknown> = {
-    query: req.query,
-  };
+  const payload: Record<string, unknown> = {};
+  if (req.query) payload.query = req.query;
+  if (req.queries) payload.queries = req.queries;
   if (req.sources) payload.sources = req.sources;
   if (req.categories) payload.categories = req.categories;
   if (req.limit != null) payload.limit = req.limit;

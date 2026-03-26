@@ -470,7 +470,8 @@ export interface DecompositionOptions {
 }
 
 export interface SearchRequest {
-  query: string;
+  query?: string;
+  queries?: string[];
   sources?: Array<
     'web' | 'news' | 'images' | { type: 'web' | 'news' | 'images' }
   >;

@@ -1067,7 +1067,8 @@ DecompositionOption = Union[bool, str, DecompositionOptions]
 class SearchRequest(BaseModel):
     """Request for search operations."""
 
-    query: str
+    query: Optional[str] = None
+    queries: Optional[List[str]] = None
     sources: Optional[List[SourceOption]] = None
     categories: Optional[List[CategoryOption]] = None
     limit: Optional[int] = 5

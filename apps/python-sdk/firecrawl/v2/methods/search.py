@@ -117,9 +117,13 @@ def _validate_search_request(request: SearchRequest) -> SearchRequest:
     Raises:
         ValueError: If request is invalid
     """
-    # Validate query
-    if not request.query or not request.query.strip():
+    # Validate query or queries
+    if request.query is not None and not request.query.strip():
         raise ValueError("Query cannot be empty")
+    if request.query is None and not request.queries:
+        raise ValueError("Either 'query' or 'queries' must be provided")
+    if request.query is not None and request.queries:
+        raise ValueError("Cannot provide both 'query' and 'queries'")
     
     # Validate limit
     if request.limit is not None:
