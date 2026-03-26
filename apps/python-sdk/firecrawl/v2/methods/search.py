@@ -3,7 +3,7 @@ Search functionality for Firecrawl v2 API.
 """
 
 from typing import Dict, Any, Union, List, TypeVar, Type
-from ..types import SearchRequest, SearchData, Document, SearchResultWeb, SearchResultNews, SearchResultImages
+from ..types import SearchRequest, SearchData, DecomposedSearchData, DecomposedQueryResult, Document, SearchResultWeb, SearchResultNews, SearchResultImages
 from ..utils.normalize import normalize_document_input, _map_search_result_keys
 from ..utils import HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
 
@@ -12,7 +12,7 @@ T = TypeVar("T")
 def search(
     client: HttpClient,
     request: SearchRequest
-) -> SearchData:
+) -> Union[SearchData, DecomposedSearchData]:
     """
     Search for documents.
     
@@ -35,6 +35,21 @@ def search(
         if not response_data.get("success"):
             handle_response_error(response, "search")
         data = response_data.get("data", {}) or {}
+
+        # Decomposition response: { originalQuery, queries: [...] }
+        if "queries" in data and "originalQuery" in data:
+            return DecomposedSearchData(
+                original_query=data["originalQuery"],
+                queries=[
+                    DecomposedQueryResult(
+                        query=q["query"],
+                        results=_transform_array(q.get("results", []), SearchResultWeb),
+                    )
+                    for q in data["queries"]
+                ],
+            )
+
+        # Standard response: { web, news, images }
         out = SearchData()
         if "web" in data:
             out.web = _transform_array(data["web"], SearchResultWeb)

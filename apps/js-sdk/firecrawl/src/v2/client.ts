@@ -35,6 +35,7 @@ import type {
   Document,
   ScrapeOptions,
   SearchData,
+  DecomposedSearchData,
   SearchRequest,
   MapData,
   MapOptions,
@@ -184,7 +185,7 @@ export class FirecrawlClient {
    * @param req Additional search options (sources, limit, scrapeOptions, etc.).
    * @returns Structured search results.
    */
-  async search(query: string, req: Omit<SearchRequest, "query"> = {}): Promise<SearchData> {
+  async search(query: string, req: Omit<SearchRequest, "query"> = {}): Promise<SearchData | DecomposedSearchData> {
     return search(this.http, { query, ...req });
   }
 

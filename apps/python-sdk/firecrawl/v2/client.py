@@ -275,7 +275,7 @@ class FirecrawlClient:
         decomposition: Optional["DecompositionOption"] = None,
         scrape_options: Optional[ScrapeOptions] = None,
         integration: Optional[str] = None,
-    ) -> SearchData:
+    ):
         """
         Search for documents.
         

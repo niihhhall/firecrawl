@@ -2,6 +2,8 @@ from typing import Dict, Any, Union, List, TypeVar, Type
 from ...types import (
     SearchRequest,
     SearchData,
+    DecomposedSearchData,
+    DecomposedQueryResult,
     Document,
     SearchResultWeb,
     SearchResultNews,
@@ -17,7 +19,7 @@ T = TypeVar("T")
 async def search(
     client: AsyncHttpClient,
     request: SearchRequest
-) -> SearchData:
+) -> Union[SearchData, DecomposedSearchData]:
     """
     Async search for documents.
 
@@ -40,6 +42,21 @@ async def search(
         if not response_data.get("success"):
             handle_response_error(response, "search")
         data = response_data.get("data", {}) or {}
+
+        # Decomposition response: { originalQuery, queries: [...] }
+        if "queries" in data and "originalQuery" in data:
+            return DecomposedSearchData(
+                original_query=data["originalQuery"],
+                queries=[
+                    DecomposedQueryResult(
+                        query=q["query"],
+                        results=_transform_array(q.get("results", []), SearchResultWeb),
+                    )
+                    for q in data["queries"]
+                ],
+            )
+
+        # Standard response: { web, news, images }
         out = SearchData()
         if "web" in data:
             out.web = _transform_array(data["web"], SearchResultWeb)
@@ -152,6 +169,18 @@ def _prepare_search_request(request: SearchRequest) -> Dict[str, Any]:
     if validated_request.ignore_invalid_urls is not None:
         data["ignoreInvalidURLs"] = validated_request.ignore_invalid_urls
         data.pop("ignore_invalid_urls", None)
+
+    # decomposition → decomposition (handle DecompositionOptions model → camelCase keys)
+    if validated_request.decomposition is not None:
+        decomp = validated_request.decomposition
+        if isinstance(decomp, str) or isinstance(decomp, bool):
+            data["decomposition"] = decomp
+        else:
+            data["decomposition"] = {
+                "numQueries": decomp.num_queries,
+            }
+            if decomp.searches_per_query is not None:
+                data["decomposition"]["searchesPerQuery"] = decomp.searches_per_query
 
     if validated_request.scrape_options is not None:
         scrape_data = prepare_scrape_options(validated_request.scrape_options)

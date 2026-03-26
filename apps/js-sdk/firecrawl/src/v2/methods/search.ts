@@ -1,4 +1,4 @@
-import { type Document, type SearchData, type SearchRequest, type SearchResultWeb, type ScrapeOptions, type SearchResultNews, type SearchResultImages } from "../types";
+import { type Document, type SearchData, type DecomposedSearchData, type DecomposedQueryResult, type SearchRequest, type SearchResultWeb, type ScrapeOptions, type SearchResultNews, type SearchResultImages } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { ensureValidScrapeOptions } from "../utils/validation";
 import { throwForBadResponse, normalizeAxiosError } from "../utils/errorHandler";
@@ -52,7 +52,7 @@ function transformArray<ResultType>(arr: any[]): Array<ResultType | Document> {
   return results;
 }
 
-export async function search(http: HttpClient, request: SearchRequest): Promise<SearchData> {
+export async function search(http: HttpClient, request: SearchRequest): Promise<SearchData | DecomposedSearchData> {
   const payload = prepareSearchPayload(request);
   try {
     const res = await http.post<{ success: boolean; data?: Record<string, unknown>; error?: string }>("/v2/search", payload);
@@ -60,6 +60,20 @@ export async function search(http: HttpClient, request: SearchRequest): Promise<
       throwForBadResponse(res, "search");
     }
     const data = (res.data.data || {}) as Record<string, any>;
+
+    // Decomposition response: { originalQuery, queries: [{ query, results }] }
+    if ("queries" in data && "originalQuery" in data) {
+      const out: DecomposedSearchData = {
+        originalQuery: data.originalQuery,
+        queries: (data.queries as any[]).map((q: any) => ({
+          query: q.query,
+          results: transformArray<SearchResultWeb>(q.results || []),
+        })),
+      };
+      return out;
+    }
+
+    // Standard response: { web, news, images }
     const out: SearchData = {};
     if (data.web) out.web = transformArray<SearchResultWeb>(data.web);
     if (data.news) out.news = transformArray<SearchResultNews>(data.news);
@@ -70,4 +84,3 @@ export async function search(http: HttpClient, request: SearchRequest): Promise<
     throw err;
   }
 }
-

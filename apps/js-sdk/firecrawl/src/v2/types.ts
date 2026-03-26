@@ -450,6 +450,16 @@ export interface SearchData {
   images?: Array<SearchResultImages | Document>;
 }
 
+export interface DecomposedQueryResult {
+  query: string;
+  results: Array<SearchResultWeb | Document>;
+}
+
+export interface DecomposedSearchData {
+  originalQuery: string;
+  queries: DecomposedQueryResult[];
+}
+
 export interface CategoryOption {
   type: 'github' | 'research' | 'pdf';
 }

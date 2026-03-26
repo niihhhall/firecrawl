@@ -1142,6 +1142,20 @@ class SearchData(BaseModel):
     images: Optional[List[Union[SearchResultImages, Document]]] = None
 
 
+class DecomposedQueryResult(BaseModel):
+    """A single decomposed query and its results."""
+
+    query: str
+    results: List[Union[SearchResultWeb, Document]] = []
+
+
+class DecomposedSearchData(BaseModel):
+    """Search results grouped by decomposed sub-queries."""
+
+    original_query: str
+    queries: List[DecomposedQueryResult] = []
+
+
 class SearchResponse(BaseResponse[SearchData]):
     """Response from search operation."""
 
