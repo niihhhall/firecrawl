@@ -286,6 +286,12 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(raw.statusCode).toBe(200);
       expect(raw.body.data.originalQuery).toBe("web scraping best practices");
       expect(raw.body.data.queries.length).toBeGreaterThanOrEqual(2);
+      // Each decomposed query should have an intent
+      for (const q of raw.body.data.queries) {
+        expect(q.intent).toBeDefined();
+        expect(typeof q.intent).toBe("string");
+        expect(q.intent.length).toBeGreaterThan(0);
+      }
     },
     120000,
   );

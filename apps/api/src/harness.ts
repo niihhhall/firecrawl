@@ -1,6 +1,7 @@
 import { config } from "./config";
 import { type ChildProcess, spawn } from "child_process";
 import * as net from "net";
+import { existsSync } from "fs";
 import { basename, join } from "path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
 
@@ -19,9 +20,12 @@ let nuqRabbitMQContainer: {
   containerRuntime: string;
 } | null = null;
 
-// Get the monorepo root (apps/api/dist/src -> ../../../..)
-// __dirname is available in CommonJS (which this compiles to)
-const MONOREPO_ROOT = join(__dirname, "..", "..", "..", "..");
+// Get the monorepo root.
+// When run via tsx:   __dirname = apps/api/src        → ../../..
+// When run compiled:  __dirname = apps/api/dist/src   → ../../../..
+const MONOREPO_ROOT = existsSync(join(__dirname, "..", "..", "..", "apps", "nuq-postgres"))
+  ? join(__dirname, "..", "..", "..")
+  : join(__dirname, "..", "..", "..", "..");
 const NUQ_POSTGRES_PATH = join(MONOREPO_ROOT, "apps", "nuq-postgres");
 
 interface ProcessResult {
