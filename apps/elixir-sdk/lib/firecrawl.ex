@@ -50,8 +50,22 @@ defmodule Firecrawl do
 
     api_key =
       case api_key do
-        key when is_binary(key) and byte_size(String.trim(key)) > 0 ->
-          String.trim(key)
+        key when is_binary(key) ->
+          case String.trim(key) do
+            "" ->
+              raise """
+              Firecrawl API key not found or empty. Set it in your config:
+
+                  config :firecrawl, api_key: "fc-your-api-key"
+
+              Or pass it as an option:
+
+                  Firecrawl.scrape_and_extract_from_url([url: "..."], api_key: "fc-your-api-key")
+              """
+
+            trimmed ->
+              trimmed
+          end
 
         _ ->
           raise """
