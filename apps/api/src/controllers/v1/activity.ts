@@ -18,6 +18,7 @@ const VALID_ENDPOINTS = [
   "map",
   "agent",
   "browser",
+  "interact",
 ] as const;
 
 type ActivityEndpoint = (typeof VALID_ENDPOINTS)[number];
