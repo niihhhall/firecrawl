@@ -344,25 +344,25 @@ v2Router.delete(
 
 v2Router.get(
   "/team/credit-usage",
-  authMiddleware(RateLimiterMode.CrawlStatus),
+  authMiddleware(RateLimiterMode.Account),
   wrap(creditUsageController),
 );
 
 v2Router.get(
   "/team/credit-usage/historical",
-  authMiddleware(RateLimiterMode.CrawlStatus),
+  authMiddleware(RateLimiterMode.Account),
   wrap(creditUsageHistoricalController),
 );
 
 v2Router.get(
   "/team/token-usage",
-  authMiddleware(RateLimiterMode.ExtractStatus),
+  authMiddleware(RateLimiterMode.Account),
   wrap(tokenUsageController),
 );
 
 v2Router.get(
   "/team/token-usage/historical",
-  authMiddleware(RateLimiterMode.ExtractStatus),
+  authMiddleware(RateLimiterMode.Account),
   wrap(tokenUsageHistoricalController),
 );
 
@@ -374,7 +374,7 @@ v2Router.get(
 
 v2Router.get(
   "/team/queue-status",
-  authMiddleware(RateLimiterMode.CrawlStatus),
+  authMiddleware(RateLimiterMode.Account),
   wrap(queueStatusController),
 );
 
