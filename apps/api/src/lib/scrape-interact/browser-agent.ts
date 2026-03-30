@@ -142,7 +142,7 @@ async function execInBrowser(
 ): Promise<BrowserServiceExecResponse> {
   return browserServiceRequest<BrowserServiceExecResponse>(
     "POST",
-    `/browsers/${browserId}/exec`,
+    `/v1/sessions/${browserId}/exec`,
     { code, language: "bash", timeout, origin },
   );
 }
@@ -238,7 +238,7 @@ export async function executePromptViaBrowserAgent(
 
         // Ensure only one tab exists and it's in the foreground for live view
         try {
-          await browserServiceRequest("POST", `/browsers/${browserId}/exec`, {
+          await browserServiceRequest("POST", `/v1/sessions/${browserId}/exec`, {
             code: [
               `const ctx = page.context();`,
               `const pages = ctx.pages();`,
@@ -257,7 +257,7 @@ export async function executePromptViaBrowserAgent(
 
         const elapsed = Date.now() - start;
 
-        debugLog.add(`Exit: ${result.exitCode} (${elapsed}ms)`);
+        debugLog.add(`Exit: ${result.exit_code} (${elapsed}ms)`);
         if (output) debugLog.add(`Output:\n${output}`);
         if (result.stderr) debugLog.add(`Stderr:\n${result.stderr}`);
         debugLog.add("");
@@ -270,13 +270,13 @@ export async function executePromptViaBrowserAgent(
           ? `(${output.length} chars)`
           : (output || result.stderr || "").slice(0, 120);
         const status =
-          result.exitCode === 0 ? "OK" : `FAIL(${result.exitCode})`;
+          result.exit_code === 0 ? "OK" : `FAIL(${result.exit_code})`;
         actionLog.push(`${toolCallCount}. ${code} → ${status}: ${brief}`);
 
-        if (result.exitCode !== 0) {
+        if (result.exit_code !== 0) {
           return {
             error: result.stderr || "Command failed",
-            exit_code: result.exitCode,
+            exit_code: result.exit_code,
             output,
           };
         }
@@ -344,7 +344,7 @@ export async function executePromptViaBrowserAgent(
       stdout: allOutputs.join("\n"),
       result: lastSnapshotResult,
       stderr: "",
-      exitCode: 0,
+      exit_code: 0,
       killed: false,
     };
   } catch (err: unknown) {
@@ -358,7 +358,7 @@ export async function executePromptViaBrowserAgent(
       stdout: allOutputs.join("\n"),
       result: lastSnapshotResult,
       stderr: msg,
-      exitCode: 1,
+      exit_code: 1,
       killed: false,
     };
   }

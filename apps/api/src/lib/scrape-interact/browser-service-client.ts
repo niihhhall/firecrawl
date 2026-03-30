@@ -5,25 +5,28 @@ import { config } from "../../config";
 // ---------------------------------------------------------------------------
 
 export interface BrowserServiceCreateResponse {
-  sessionId: string;
-  cdpUrl: string;
-  viewUrl: string;
-  iframeUrl: string;
-  interactiveIframeUrl: string;
-  expiresAt: string;
+  id: string;
+  token: string;
+  mode: string;
+  cdp_url: string;
+  selkies_url: string;
+  screencast_url: string;
+  ttl_seconds: number;
+  activity_ttl_seconds: number;
+  created_at: string;
+  status: string;
 }
 
 export interface BrowserServiceExecResponse {
   stdout: string;
   result: string;
   stderr: string;
-  exitCode: number;
+  exit_code: number;
   killed: boolean;
 }
 
 export interface BrowserServiceDeleteResponse {
-  ok: boolean;
-  sessionDurationMs?: number;
+  status: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -49,9 +52,6 @@ function browserServiceHeaders(
     "Content-Type": "application/json",
     ...(extra ?? {}),
   };
-  if (config.BROWSER_SERVICE_API_KEY) {
-    headers["Authorization"] = `Bearer ${config.BROWSER_SERVICE_API_KEY}`;
-  }
   return headers;
 }
 

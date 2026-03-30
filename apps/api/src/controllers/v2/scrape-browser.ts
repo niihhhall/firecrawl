@@ -1,4 +1,3 @@
-import { createHash } from "crypto";
 import { v7 as uuidv7 } from "uuid";
 import { Response } from "express";
 import { z } from "zod";
@@ -24,7 +23,6 @@ import {
 } from "../../lib/concurrency-limit";
 import {
   browserServiceRequest,
-  BrowserServiceError,
   BrowserServiceExecResponse,
   BrowserServiceCreateResponse,
   BrowserServiceDeleteResponse,
@@ -186,7 +184,6 @@ export async function scrapeInteractController(
       scrapeId,
       replayContext,
       logger,
-      (scrape.options as ScrapeOptions).profile,
     );
     if ("error" in created) {
       return res.status(created.status).json(created.body);
@@ -245,7 +242,7 @@ export async function scrapeInteractController(
       source: "interact",
       language: "bash",
       timeout,
-      exit_code: execResult.exitCode ?? null,
+      exit_code: execResult.exit_code ?? null,
       killed: execResult.killed ?? false,
     });
   } else {
@@ -254,7 +251,7 @@ export async function scrapeInteractController(
     try {
       execResult = await browserServiceRequest<BrowserServiceExecResponse>(
         "POST",
-        `/browsers/${session.browser_id}/exec`,
+        `/v1/sessions/${session.browser_id}/exec`,
         { code: rawCode!, language, timeout, origin },
       );
     } catch (err) {
@@ -273,7 +270,7 @@ export async function scrapeInteractController(
       source: "interact",
       language,
       timeout,
-      exit_code: execResult.exitCode ?? null,
+      exit_code: execResult.exit_code ?? null,
       killed: execResult.killed ?? false,
     });
   }
@@ -281,13 +278,13 @@ export async function scrapeInteractController(
   // --- Respond ---
 
   logger.debug("Execution result", {
-    exitCode: execResult.exitCode,
+    exitCode: execResult.exit_code,
     killed: execResult.killed,
     stdoutLength: execResult.stdout?.length,
     stderrLength: execResult.stderr?.length,
   });
 
-  const hasError = execResult.exitCode !== 0 || execResult.killed;
+  const hasError = execResult.exit_code !== 0 || execResult.killed;
   const agentOutput = "output" in execResult ? execResult.output : undefined;
 
   return res.status(200).json({
@@ -298,7 +295,7 @@ export async function scrapeInteractController(
     stdout: execResult.stdout,
     result: execResult.result,
     stderr: execResult.stderr,
-    exitCode: execResult.exitCode,
+    exitCode: execResult.exit_code,
     killed: execResult.killed,
     ...(hasError ? { error: execResult.stderr || "Execution failed" } : {}),
   });
@@ -336,14 +333,11 @@ export async function scrapeStopInteractiveBrowserController(
   });
   logger.info("Deleting browser session");
 
-  let sessionDurationMs: number | undefined;
   try {
-    const deleteResult =
-      await browserServiceRequest<BrowserServiceDeleteResponse>(
-        "DELETE",
-        `/browsers/${session.browser_id}`,
-      );
-    sessionDurationMs = deleteResult?.sessionDurationMs;
+    await browserServiceRequest<BrowserServiceDeleteResponse>(
+      "DELETE",
+      `/v1/sessions/${session.browser_id}`,
+    );
   } catch (err) {
     logger.warn("Failed to delete browser session via browser service", {
       error: err,
@@ -368,11 +362,7 @@ export async function scrapeStopInteractiveBrowserController(
     return res.status(200).json({ success: true });
   }
 
-  const wallClockMs = Date.now() - new Date(session.created_at).getTime();
-  const durationMs =
-    sessionDurationMs && sessionDurationMs > 0
-      ? sessionDurationMs
-      : wallClockMs;
+  const durationMs = Date.now() - new Date(session.created_at).getTime();
 
   const usedPrompt = await didBrowserSessionUsePrompt(session.id);
   const rate = usedPrompt
@@ -431,7 +421,6 @@ async function createSessionForScrape(
     ? NonNullable<C>
     : never,
   logger: typeof _logger,
-  profile: { name: string; saveChanges: boolean } | undefined,
 ): Promise<
   | { session: Awaited<ReturnType<typeof insertBrowserSession>> }
   | { status: number; body: { success: false; error: string }; error: true }
@@ -489,47 +478,25 @@ async function createSessionForScrape(
     };
   }
 
-  // Create the browser session (retry up to 3 times)
+  // Create the browser session via firebox-controller (retry up to 3 times)
   const MAX_CREATE_RETRIES = 3;
   let svcResponse: BrowserServiceCreateResponse | undefined;
   let lastCreateError: unknown;
-
-  let persistentStorage: { uniqueId: string; write: boolean } | undefined;
-  if (profile) {
-    const teamHash = createHash("sha256")
-      .update(req.auth.team_id)
-      .digest("hex")
-      .slice(0, 16);
-    persistentStorage = {
-      uniqueId: `${teamHash}_${profile.name}`,
-      write: profile.saveChanges !== false,
-    };
-  }
 
   for (let attempt = 1; attempt <= MAX_CREATE_RETRIES; attempt++) {
     try {
       svcResponse = await browserServiceRequest<BrowserServiceCreateResponse>(
         "POST",
-        "/browsers",
+        "/v1/sessions",
         {
-          ttl,
-          ...(activityTtl !== undefined ? { activityTtl } : {}),
-          ...(persistentStorage !== undefined ? { persistentStorage } : {}),
+          mode: "sandbox",
+          ttl_seconds: ttl,
+          activity_ttl_seconds: activityTtl ?? 0,
+          customer_id: req.auth.team_id,
         },
       );
       break;
     } catch (err) {
-      if (err instanceof BrowserServiceError && err.status === 409) {
-        return {
-          status: 409,
-          body: {
-            success: false,
-            error:
-              "Another session is currently writing to this profile. Only one writer is allowed at a time. You can still access it with saveChanges: false, or try again later.",
-          },
-          error: true,
-        };
-      }
       lastCreateError = err;
       logger.warn("Browser session creation attempt failed", {
         attempt,
@@ -558,7 +525,7 @@ async function createSessionForScrape(
     const replayResult =
       await browserServiceRequest<BrowserServiceExecResponse>(
         "POST",
-        `/browsers/${svcResponse.sessionId}/exec`,
+        `/v1/sessions/${svcResponse.id}/exec`,
         {
           code: buildReplayScript(replayContext),
           language: "node",
@@ -567,7 +534,7 @@ async function createSessionForScrape(
         },
       );
 
-    if (replayResult.exitCode !== 0 || replayResult.killed) {
+    if (replayResult.exit_code !== 0 || replayResult.killed) {
       throw new Error(
         replayResult.stderr?.trim() ||
           replayResult.stdout?.trim() ||
@@ -580,7 +547,7 @@ async function createSessionForScrape(
     // close everything else, update the REPL's page var, and bring to front.
     await browserServiceRequest(
       "POST",
-      `/browsers/${svcResponse.sessionId}/exec`,
+      `/v1/sessions/${svcResponse.id}/exec`,
       {
         code: [
           `const ctx = page.context();`,
@@ -601,7 +568,7 @@ async function createSessionForScrape(
     // Sync agent-browser to the correct page
     const syncResult = await browserServiceRequest<BrowserServiceExecResponse>(
       "POST",
-      `/browsers/${svcResponse.sessionId}/exec`,
+      `/v1/sessions/${svcResponse.id}/exec`,
       {
         code: `agent-browser get url`,
         language: "bash",
@@ -618,7 +585,7 @@ async function createSessionForScrape(
       });
       await browserServiceRequest<BrowserServiceExecResponse>(
         "POST",
-        `/browsers/${svcResponse.sessionId}/exec`,
+        `/v1/sessions/${svcResponse.id}/exec`,
         {
           code: `await page.goto(${JSON.stringify(replayContext.targetUrl)}, { waitUntil: "networkidle0" });`,
           language: "node",
@@ -633,7 +600,7 @@ async function createSessionForScrape(
     });
     await browserServiceRequest(
       "DELETE",
-      `/browsers/${svcResponse.sessionId}`,
+      `/v1/sessions/${svcResponse.id}`,
     ).catch(() => {});
     return {
       status: 409,
@@ -645,6 +612,12 @@ async function createSessionForScrape(
       error: true,
     };
   }
+
+  // Build user-facing URLs with embedded auth token
+  const tokenQuery = `?token=${svcResponse.token}`;
+  const cdpUrl = `${svcResponse.cdp_url}${tokenQuery}`;
+  const liveViewUrl = `${svcResponse.screencast_url}${tokenQuery}`;
+  const interactiveLiveViewUrl = `${svcResponse.selkies_url}${tokenQuery}`;
 
   // Persist in Supabase
   try {
@@ -663,12 +636,12 @@ async function createSessionForScrape(
       id: sessionId,
       team_id: req.auth.team_id,
       scrape_id: scrapeId,
-      browser_id: svcResponse.sessionId,
+      browser_id: svcResponse.id,
       workspace_id: "",
       context_id: "",
-      cdp_url: svcResponse.cdpUrl,
-      cdp_path: svcResponse.iframeUrl,
-      cdp_interactive_path: svcResponse.interactiveIframeUrl,
+      cdp_url: cdpUrl,
+      cdp_path: liveViewUrl,
+      cdp_interactive_path: interactiveLiveViewUrl,
       stream_web_view: streamWebView,
       status: "active",
       ttl_total: ttl,
@@ -693,7 +666,7 @@ async function createSessionForScrape(
     });
     await browserServiceRequest(
       "DELETE",
-      `/browsers/${svcResponse.sessionId}`,
+      `/v1/sessions/${svcResponse.id}`,
     ).catch(() => {});
     return {
       status: 500,

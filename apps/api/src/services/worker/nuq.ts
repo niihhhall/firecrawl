@@ -1484,14 +1484,14 @@ class NuQ<JobData = any, JobReturnValue = any> {
       } else {
         await nl.channel.cancel(nl.queue);
         await nl.channel.close();
-        await nl.connection.close();
+        await nl.connection.close().catch(() => {});
       }
     }
     if (this.sender) {
       const ns = this.sender;
       this.sender = null;
       await ns.channel.close();
-      await ns.connection.close();
+      await ns.connection.close().catch(() => {});
     }
   }
 }

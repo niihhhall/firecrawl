@@ -1,4 +1,3 @@
-import { createHash } from "crypto";
 import { v7 as uuidv7 } from "uuid";
 import { Request, Response } from "express";
 import { z } from "zod";
@@ -117,9 +116,6 @@ function browserServiceHeaders(
     "Content-Type": "application/json",
     ...(extra ?? {}),
   };
-  if (config.BROWSER_SERVICE_API_KEY) {
-    headers["Authorization"] = `Bearer ${config.BROWSER_SERVICE_API_KEY}`;
-  }
   return headers;
 }
 
@@ -160,29 +156,40 @@ async function browserServiceRequest<T>(
 }
 
 // ---------------------------------------------------------------------------
-// Browser service response types
+// Browser service (firebox-controller) response types
 // ---------------------------------------------------------------------------
 
 interface BrowserServiceCreateResponse {
-  sessionId: string;
-  cdpUrl: string;
-  viewUrl: string;
-  iframeUrl: string;
-  interactiveIframeUrl: string;
-  expiresAt: string;
+  id: string;
+  token: string;
+  mode: string;
+  cdp_url: string;
+  selkies_url: string;
+  screencast_url: string;
+  ttl_seconds: number;
+  activity_ttl_seconds: number;
+  created_at: string;
+  status: string;
 }
 
 interface BrowserServiceExecResponse {
   stdout: string;
   result: string;
   stderr: string;
-  exitCode: number;
+  exit_code: number;
   killed: boolean;
 }
 
 interface BrowserServiceDeleteResponse {
-  ok: boolean;
-  sessionDurationMs: number;
+  status: string;
+}
+
+interface BrowserServiceWebhookEvent {
+  eventId?: string;
+  eventType?: string;
+  reason?: string;
+  sessionId?: string;
+  sessionDurationMs?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +228,13 @@ export async function browserCreateController(
     });
   }
 
+  if (profile) {
+    return res.status(501).json({
+      success: false,
+      error: "Browser profiles are not yet supported. This feature is coming soon.",
+    });
+  }
+
   logger.info("Creating browser session", { ttl, activityTtl });
 
   // 0a. Check if team has enough credits for the full TTL
@@ -253,50 +267,25 @@ export async function browserCreateController(
     });
   }
 
-  // 1. Create a browser session via the browser service (retry up to 3 times)
+  // 1. Create a browser session via firebox-controller (retry up to 3 times)
   const MAX_CREATE_RETRIES = 3;
   let svcResponse: BrowserServiceCreateResponse | undefined;
   let lastCreateError: unknown;
-
-  // Build persistentStorage from profile if provided
-  let persistentStorage: { uniqueId: string; write: boolean } | undefined;
-  if (profile) {
-    const teamHash = createHash("sha256")
-      .update(req.auth.team_id)
-      .digest("hex")
-      .slice(0, 16);
-    persistentStorage = {
-      uniqueId: `${teamHash}_${profile.name}`,
-      write: profile.saveChanges !== false,
-    };
-  }
 
   for (let attempt = 1; attempt <= MAX_CREATE_RETRIES; attempt++) {
     try {
       svcResponse = await browserServiceRequest<BrowserServiceCreateResponse>(
         "POST",
-        "/browsers",
+        "/v1/sessions",
         {
-          ttl,
-          ...(activityTtl !== undefined ? { activityTtl } : {}),
-          ...(persistentStorage !== undefined ? { persistentStorage } : {}),
+          mode: "sandbox",
+          ttl_seconds: ttl,
+          activity_ttl_seconds: activityTtl ?? 0,
+          customer_id: req.auth.team_id,
         },
       );
       break;
     } catch (err) {
-      // 409 means the profile is locked by another writer — don't retry
-      if (err instanceof BrowserServiceError && err.status === 409) {
-        logger.warn("Profile is locked", {
-          profileName: profile?.name,
-          error: err,
-        });
-        return res.status(409).json({
-          success: false,
-          error:
-            "Another session is currently writing to this profile. Only one writer is allowed at a time. You can still access it with saveChanges: false, or try again later.",
-        });
-      }
-
       lastCreateError = err;
       logger.warn("Browser session creation attempt failed", {
         attempt,
@@ -320,6 +309,16 @@ export async function browserCreateController(
     });
   }
 
+  // Build user-facing URLs with embedded auth token
+  const tokenQuery = `?token=${svcResponse.token}`;
+  const cdpUrl = `${svcResponse.cdp_url}${tokenQuery}`;
+  const liveViewUrl = `${svcResponse.screencast_url}${tokenQuery}`;
+  const interactiveLiveViewUrl = `${svcResponse.selkies_url}${tokenQuery}`;
+
+  const expiresAt = new Date(
+    new Date(svcResponse.created_at).getTime() + svcResponse.ttl_seconds * 1000,
+  ).toISOString();
+
   // 2. Persist session in Supabase
   try {
     await logRequest({
@@ -336,12 +335,12 @@ export async function browserCreateController(
     await insertBrowserSession({
       id: sessionId,
       team_id: req.auth.team_id,
-      browser_id: svcResponse.sessionId,
+      browser_id: svcResponse.id,
       workspace_id: "",
       context_id: "",
-      cdp_url: svcResponse.cdpUrl,
-      cdp_path: svcResponse.iframeUrl, // repurposed: stores view URL
-      cdp_interactive_path: svcResponse.interactiveIframeUrl, // repurposed: stores interactive view URL
+      cdp_url: cdpUrl,
+      cdp_path: liveViewUrl,
+      cdp_interactive_path: interactiveLiveViewUrl,
       stream_web_view: streamWebView,
       status: "active",
       ttl_total: ttl,
@@ -355,7 +354,7 @@ export async function browserCreateController(
     });
     await browserServiceRequest(
       "DELETE",
-      `/browsers/${svcResponse.sessionId}`,
+      `/v1/sessions/${svcResponse.id}`,
     ).catch(() => {});
     return res.status(500).json({
       success: false,
@@ -374,16 +373,16 @@ export async function browserCreateController(
 
   logger.info("Browser session created", {
     sessionId,
-    browserId: svcResponse.sessionId,
+    browserId: svcResponse.id,
   });
 
   return res.status(200).json({
     success: true,
     id: sessionId,
-    cdpUrl: svcResponse.cdpUrl,
-    liveViewUrl: svcResponse.iframeUrl,
-    interactiveLiveViewUrl: svcResponse.interactiveIframeUrl,
-    expiresAt: svcResponse.expiresAt,
+    cdpUrl,
+    liveViewUrl,
+    interactiveLiveViewUrl,
+    expiresAt,
   });
 }
 
@@ -444,12 +443,12 @@ export async function browserExecuteController(
 
   logger.info("Executing code in browser session", { language, timeout });
 
-  // Execute code via the browser service
+  // Execute code via firebox-controller
   let execResult: BrowserServiceExecResponse;
   try {
     execResult = await browserServiceRequest<BrowserServiceExecResponse>(
       "POST",
-      `/browsers/${session.browser_id}/exec`,
+      `/v1/sessions/${session.browser_id}/exec`,
       { code, language, timeout, origin },
     );
   } catch (err) {
@@ -461,7 +460,7 @@ export async function browserExecuteController(
   }
 
   logger.debug("Execution result", {
-    exitCode: execResult.exitCode,
+    exitCode: execResult.exit_code,
     killed: execResult.killed,
     stdoutLength: execResult.stdout?.length,
     stderrLength: execResult.stderr?.length,
@@ -473,18 +472,18 @@ export async function browserExecuteController(
     source: "browser",
     language,
     timeout,
-    exit_code: execResult.exitCode ?? null,
+    exit_code: execResult.exit_code ?? null,
     killed: execResult.killed ?? false,
   });
 
-  const hasError = execResult.exitCode !== 0 || execResult.killed;
+  const hasError = execResult.exit_code !== 0 || execResult.killed;
 
   return res.status(200).json({
     success: true,
     stdout: execResult.stdout,
     result: execResult.result,
     stderr: execResult.stderr,
-    exitCode: execResult.exitCode,
+    exitCode: execResult.exit_code,
     killed: execResult.killed,
     ...(hasError ? { error: execResult.stderr || "Execution failed" } : {}),
   });
@@ -529,15 +528,12 @@ export async function browserDeleteController(
 
   logger.info("Deleting browser session");
 
-  // Release the browser session via the browser service
-  let sessionDurationMs: number | undefined;
+  // Release the browser session via firebox-controller
   try {
-    const deleteResult =
-      await browserServiceRequest<BrowserServiceDeleteResponse>(
-        "DELETE",
-        `/browsers/${session.browser_id}`,
-      );
-    sessionDurationMs = deleteResult?.sessionDurationMs;
+    await browserServiceRequest<BrowserServiceDeleteResponse>(
+      "DELETE",
+      `/v1/sessions/${session.browser_id}`,
+    );
   } catch (err) {
     logger.warn("Failed to delete browser session via browser service", {
       error: err,
@@ -569,11 +565,7 @@ export async function browserDeleteController(
     });
   }
 
-  const wallClockMs = Date.now() - new Date(session.created_at).getTime();
-  const durationMs =
-    sessionDurationMs && sessionDurationMs > 0
-      ? sessionDurationMs
-      : wallClockMs;
+  const durationMs = Date.now() - new Date(session.created_at).getTime();
 
   const usedPrompt = await didBrowserSessionUsePrompt(session.id);
   const rate = usedPrompt
@@ -678,13 +670,17 @@ export async function browserWebhookDestroyedController(
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const { sessionId } = req.body as { sessionId?: string };
-  if (!sessionId) {
-    return res.status(400).json({ error: "Missing browserId" });
+  const event = req.body as BrowserServiceWebhookEvent;
+  const browserId = event.sessionId;
+  if (!browserId) {
+    return res.status(400).json({ error: "Missing sessionId" });
   }
-  let browserId = sessionId;
 
-  logger.info("Received destroyed webhook from browser service", { browserId });
+  logger.info("Received destroyed webhook from browser service", {
+    browserId,
+    eventType: event.eventType,
+    reason: event.reason,
+  });
 
   const session = await getBrowserSessionByBrowserId(browserId);
   if (!session) {
@@ -714,7 +710,11 @@ export async function browserWebhookDestroyedController(
     return res.status(200).json({ ok: true });
   }
 
-  const durationMs = Date.now() - new Date(session.created_at).getTime();
+  const wallClockMs = Date.now() - new Date(session.created_at).getTime();
+  const durationMs =
+    event.sessionDurationMs && event.sessionDurationMs > 0
+      ? event.sessionDurationMs
+      : wallClockMs;
 
   const usedPrompt = await didBrowserSessionUsePrompt(session.id);
   const rate = usedPrompt
