@@ -163,17 +163,8 @@ export async function processEngpickerJob() {
     return;
   }
 
-  // Filter out non-content URLs (sitemaps, feeds, etc.)
-  const EXCLUDED_EXTENSIONS = [
-    ".xml",
-    ".json",
-    ".txt",
-    ".rss",
-    ".atom",
-    ".pdf",
-    ".zip",
-    ".gz",
-  ];
+  // Filter out non-content URLs (sitemaps, data files, archives, etc.)
+  const EXCLUDED_EXTENSIONS = [".xml", ".json", ".txt", ".pdf", ".zip", ".gz"];
   const filteredRows = indexRows.filter((row: { url: string }) => {
     const url = row.url.toLowerCase();
     const pathname = new URL(url).pathname.toLowerCase();
