@@ -76,6 +76,7 @@ export async function getTeamBalance(
   if (!balances?.[CREDITS_FEATURE_ID]) {
     const customer = await autumnClient.customers.getOrCreate({
       customerId: orgId,
+      autoEnablePlanId: "free",
     });
     balances = customer?.balances;
     subscriptions = customer?.subscriptions;
