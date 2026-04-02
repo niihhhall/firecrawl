@@ -78,9 +78,7 @@ export async function getTeamBalance(
       customerId: orgId,
     });
     balances = customer?.balances;
-    if (!subscriptions?.length) {
-      subscriptions = customer?.subscriptions;
-    }
+    subscriptions = customer?.subscriptions;
   }
 
   const creditBalance = balances?.[CREDITS_FEATURE_ID];
