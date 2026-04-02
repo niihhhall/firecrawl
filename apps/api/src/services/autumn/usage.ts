@@ -49,77 +49,80 @@ async function lookupOrgId(teamId: string): Promise<string> {
 export async function getTeamBalance(
   teamId: string,
 ): Promise<TeamBalance | null> {
-  if (!autumnClient) return null;
+  if (!autumnClient) {
+    throw new Error("Autumn client is not configured (AUTUMN_SECRET_KEY missing)");
+  }
+
+  const orgId = await lookupOrgId(teamId);
+
+  // Try entity-scoped balance first
+  let balances: Record<string, any> | undefined;
+  let subscriptions: Array<any> | undefined;
 
   try {
-    const orgId = await lookupOrgId(teamId);
+    const entity = await autumnClient.entities.get({
+      customerId: orgId,
+      entityId: teamId,
+    });
+    balances = entity?.balances;
+    subscriptions = entity?.subscriptions;
+  } catch (err: any) {
+    const status = err?.statusCode ?? err?.status ?? err?.response?.status;
+    if (status !== 404) throw err;
+    // Entity not found — fall through to customer-level
+  }
 
-    // Try entity-scoped balance first
-    let balances: Record<string, any> | undefined;
-    let subscriptions: Array<any> | undefined;
-
-    try {
-      const entity = await autumnClient.entities.get({
-        customerId: orgId,
-        entityId: teamId,
-      });
-      balances = entity?.balances;
-      subscriptions = entity?.subscriptions;
-    } catch (err: any) {
-      const status = err?.statusCode ?? err?.status ?? err?.response?.status;
-      if (status !== 404) throw err;
-      // Entity not found — fall through to customer-level
-    }
-
-    // Fall back to customer-level balance
-    if (!balances) {
-      const customer = await autumnClient.customers.getOrCreate({
-        customerId: orgId,
-      });
-      balances = customer?.balances;
+  // Fall back to customer-level balance if CREDITS feature not present
+  if (!balances?.[CREDITS_FEATURE_ID]) {
+    const customer = await autumnClient.customers.getOrCreate({
+      customerId: orgId,
+    });
+    balances = customer?.balances;
+    if (!subscriptions?.length) {
       subscriptions = customer?.subscriptions;
     }
+  }
 
-    const creditBalance = balances?.[CREDITS_FEATURE_ID];
+  const creditBalance = balances?.[CREDITS_FEATURE_ID];
 
-    // Find the active subscription's billing period
-    const activeSub = subscriptions?.find(
-      (s: any) =>
-        s.status === "active" ||
-        s.status === "trialing" ||
-        s.status === "past_due",
-    );
-
-    const periodStartEpoch = activeSub?.currentPeriodStart;
-    const periodEndEpoch = activeSub?.currentPeriodEnd;
-
-    // Extract plan-only credits from the breakdown (excludes credit packs,
-    // auto-recharge, etc.) to preserve backwards compatibility with the old
-    // planCredits field semantics.
-    let planCredits = creditBalance?.granted ?? 0;
-    const breakdowns: Array<any> | undefined = creditBalance?.breakdown;
-    if (breakdowns?.length) {
-      planCredits = breakdowns.reduce(
-        (sum: number, b: any) => sum + (b.includedGrant ?? 0),
-        0,
-      );
-    }
-
-    return {
-      remaining: creditBalance?.remaining ?? 0,
-      granted: creditBalance?.granted ?? 0,
-      planCredits,
-      usage: creditBalance?.usage ?? 0,
-      unlimited: creditBalance?.unlimited ?? false,
-      periodStart: periodStartEpoch
-        ? new Date(periodStartEpoch * 1000).toISOString()
-        : null,
-      periodEnd: periodEndEpoch
-        ? new Date(periodEndEpoch * 1000).toISOString()
-        : null,
-    };
-  } catch (error) {
-    logger.error("Failed to get team balance from Autumn", { teamId, error });
+  if (!creditBalance) {
     return null;
   }
+
+  // Find the active subscription's billing period
+  const activeSub = subscriptions?.find(
+    (s: any) =>
+      s.status === "active" ||
+      s.status === "trialing" ||
+      s.status === "past_due",
+  );
+
+  const periodStartEpoch = activeSub?.currentPeriodStart;
+  const periodEndEpoch = activeSub?.currentPeriodEnd;
+
+  // Extract plan-only credits from the breakdown (excludes credit packs,
+  // auto-recharge, etc.) to preserve backwards compatibility with the old
+  // planCredits field semantics.
+  let planCredits = creditBalance?.granted ?? 0;
+  const breakdowns: Array<any> | undefined = creditBalance?.breakdown;
+  if (breakdowns?.length) {
+    planCredits = breakdowns.reduce(
+      (sum: number, b: any) => sum + (b.includedGrant ?? 0),
+      0,
+    );
+  }
+
+  return {
+    remaining: creditBalance?.remaining ?? 0,
+    granted: creditBalance?.granted ?? 0,
+    planCredits,
+    usage: creditBalance?.usage ?? 0,
+    unlimited: creditBalance?.unlimited ?? false,
+    periodStart: periodStartEpoch
+      ? new Date(periodStartEpoch * 1000).toISOString()
+      : null,
+    periodEnd: periodEndEpoch
+      ? new Date(periodEndEpoch * 1000).toISOString()
+      : null,
+  };
 }
