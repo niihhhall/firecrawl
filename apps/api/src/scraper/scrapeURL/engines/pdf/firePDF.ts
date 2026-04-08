@@ -15,7 +15,7 @@ export async function scrapePDFWithFirePDF(
   maxPages?: number,
   pagesProcessed?: number,
 ): Promise<PDFProcessorResult> {
-  const logger = meta.logger.child({ method: "scrapePDF/firePDF" });
+  const logger = meta.logger;
 
   if (!maxPages && !meta.internalOptions.zeroDataRetention) {
     try {
