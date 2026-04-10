@@ -491,9 +491,13 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     // Final fallback to PdfParse (skipped when Fire PDF is forced).
     if (!result && !forceFirePDF) {
       result = await scrapePDFWithParsePDF(
-        meta,
+        {
+          ...meta,
+          logger: meta.logger.child({
+            method: "scrapePDF/scrapePDFWithParsePDF",
+          }),
+        },
         tempFilePath,
-        "scrapePDF/scrapePDFWithParsePDF",
       );
     }
 

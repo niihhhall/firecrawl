@@ -7,10 +7,8 @@ import type { PDFProcessorResult } from "./types";
 export async function scrapePDFWithParsePDF(
   meta: Meta,
   tempFilePath: string,
-  method?: string,
 ): Promise<PDFProcessorResult> {
-  const logger = meta.logger.child({ method: method ?? "scrapePDFWithParsePDF" });
-  logger.debug("Processing PDF document with parse-pdf", { tempFilePath });
+  meta.logger.debug("Processing PDF document with parse-pdf", { tempFilePath });
 
   try {
     const startedAt = Date.now();
@@ -18,7 +16,7 @@ export async function scrapePDFWithParsePDF(
     const durationMs = Date.now() - startedAt;
     const escaped = escapeHtml(result.text);
 
-    logger.info("pdfParse succeeded", {
+    meta.logger.info("pdfParse succeeded", {
       durationMs,
       markdownLength: escaped.length,
       numPages: result.numpages,
@@ -29,7 +27,7 @@ export async function scrapePDFWithParsePDF(
       html: escaped,
     };
   } catch (error) {
-    logger.error("pdfParse failed", { error });
+    meta.logger.error("pdfParse failed", { error });
     throw error;
   }
 }
