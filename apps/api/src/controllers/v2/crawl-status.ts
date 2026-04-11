@@ -189,12 +189,22 @@ export async function crawlStatusController(
     });
   }
 
-  const start =
+  const parsedSkip =
     typeof req.query.skip === "string" ? parseInt(req.query.skip, 10) : 0;
-  const end =
+  const parsedLimit =
     typeof req.query.limit === "string"
-      ? start + parseInt(req.query.limit, 10) - 1
+      ? parseInt(req.query.limit, 10)
       : undefined;
+
+  if (isNaN(parsedSkip) || (parsedLimit !== undefined && isNaN(parsedLimit))) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid query parameters: skip and limit must be numeric values",
+    });
+  }
+
+  const start = parsedSkip;
+  const end = parsedLimit !== undefined ? start + parsedLimit - 1 : undefined;
 
   const group = await crawlGroup.getGroup(req.params.jobId);
   const groupAnyJob = await scrapeQueue.getGroupAnyJob(
