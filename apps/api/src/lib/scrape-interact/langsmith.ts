@@ -11,20 +11,6 @@ export const isLangSmithEnabled = Boolean(
       : config.LANGSMITH_TRACING === true),
 );
 
-if (isLangSmithEnabled) {
-  // The langsmith SDK reads these env vars at runtime for auth + project routing.
-  // We mirror our config into process.env so both the wrapAISDK path and any
-  // traceable() calls pick up the same credentials without extra plumbing.
-  process.env.LANGSMITH_TRACING = "true";
-  process.env.LANGSMITH_API_KEY = config.LANGSMITH_API_KEY!;
-  if (config.LANGSMITH_PROJECT) {
-    process.env.LANGSMITH_PROJECT = config.LANGSMITH_PROJECT;
-  }
-  if (config.LANGSMITH_ENDPOINT) {
-    process.env.LANGSMITH_ENDPOINT = config.LANGSMITH_ENDPOINT;
-  }
-}
-
 export type InteractTraceMetadata = {
   thread_id: string;
   session_id: string;
@@ -82,6 +68,19 @@ if (isLangSmithEnabled) {
     createLangSmithProviderOptionsFn =
       vercelWrapper.createLangSmithProviderOptions;
     traceableFn = traceableMod.traceable;
+
+    // Mirror our config into process.env only after the langsmith modules
+    // loaded successfully. If init fails we fall back to the raw ai SDK
+    // without polluting the process env for other modules.
+    process.env.LANGSMITH_TRACING = "true";
+    process.env.LANGSMITH_API_KEY = config.LANGSMITH_API_KEY!;
+    if (config.LANGSMITH_PROJECT) {
+      process.env.LANGSMITH_PROJECT = config.LANGSMITH_PROJECT;
+    }
+    if (config.LANGSMITH_ENDPOINT) {
+      process.env.LANGSMITH_ENDPOINT = config.LANGSMITH_ENDPOINT;
+    }
+
     logger.info("LangSmith tracing enabled for interact agent", {
       project: config.LANGSMITH_PROJECT ?? "(default)",
     });
