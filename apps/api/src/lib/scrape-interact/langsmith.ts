@@ -52,9 +52,11 @@ type TraceableOptions = {
   tags?: string[];
 };
 
+type LangSmithProviderOptionsReturn = Record<string, unknown>;
+
 let wrappedSDK: WrappedAISDK = ai;
 let createLangSmithProviderOptionsFn:
-  | ((opts: LangSmithProviderOptions) => unknown)
+  | ((opts: LangSmithProviderOptions) => LangSmithProviderOptionsReturn)
   | null = null;
 let traceableFn:
   | (<F extends (...args: any[]) => any>(fn: F, opts?: TraceableOptions) => F)
@@ -98,9 +100,10 @@ export const { generateText, streamText, generateObject, streamObject } =
   wrappedSDK;
 
 // The LangSmith provider config is recognized by wrapAISDK but is not a
-// first-class AI SDK provider, so it doesn't match SharedV3ProviderOptions.
-// We return `any` deliberately so call sites can assign it to providerOptions
-// without fighting the type.
+// first-class AI SDK provider, so callers still need a narrow cast when
+// assigning to AI SDK's typed `providerOptions`. We keep the helper's return
+// type honest so the cast is local to the call site rather than `any`
+// propagating back here.
 export function buildLangSmithProviderOptions(
   meta: InteractTraceMetadata,
   opts: {
@@ -108,7 +111,7 @@ export function buildLangSmithProviderOptions(
     tags?: string[];
     extra?: Record<string, unknown>;
   } = {},
-): any {
+): LangSmithProviderOptionsReturn | undefined {
   if (
     !isLangSmithEnabled ||
     !createLangSmithProviderOptionsFn ||

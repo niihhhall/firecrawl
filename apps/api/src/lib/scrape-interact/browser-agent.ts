@@ -342,7 +342,12 @@ export async function executePromptViaBrowserAgent(
       tools: { browser: browserTool },
       stopWhen: stepCountIs(MAX_STEPS),
       temperature: 0,
-      ...(langsmith ? { providerOptions: { langsmith } } : {}),
+      // LangSmith's provider-options object is recognized by wrapAISDK but
+      // does not satisfy AI SDK's SharedV3ProviderOptions shape, hence the
+      // local cast — keeps the rest of the type surface strict.
+      ...(langsmith
+        ? { providerOptions: { langsmith } as Record<string, any> }
+        : {}),
       prepareStep: async ({ stepNumber, messages }) => {
         if (actionLog.length === 0) return {};
         return {
