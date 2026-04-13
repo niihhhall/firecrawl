@@ -7,6 +7,7 @@ const noopLogger = {
 describe("safeMarkdownToHtml", () => {
   afterEach(() => {
     jest.restoreAllMocks();
+    noopLogger.warn.mockClear();
   });
 
   it("converts simple markdown to HTML", async () => {
