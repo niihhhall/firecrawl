@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { promises as fs } from "fs";
 import path from "path";
-import { generateText, tool, stepCountIs } from "ai";
+import { tool, stepCountIs } from "ai";
 import { logger as _logger } from "../logger";
 import { getModel } from "../generic-ai";
 import {
@@ -9,6 +9,11 @@ import {
   BrowserServiceExecResponse,
 } from "./browser-service-client";
 import { config } from "../../config";
+import {
+  generateText,
+  buildLangSmithProviderOptions,
+  InteractTraceMetadata,
+} from "./langsmith";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -179,11 +184,19 @@ async function takeSnapshot(browserId: string): Promise<string> {
 // Main agent — tool-calling loop via AI SDK
 // ---------------------------------------------------------------------------
 
+export interface BrowserAgentTraceContext {
+  sessionId: string;
+  scrapeId: string;
+  teamId: string;
+  zeroDataRetention?: boolean;
+}
+
 export async function executePromptViaBrowserAgent(
   prompt: string,
   browserId: string,
   stepTimeout: number,
   logger: typeof _logger,
+  trace?: BrowserAgentTraceContext,
 ): Promise<AgentResult> {
   const debugLog = new AgentDebugLog(browserId);
   debugLog.add(`=== AGENT RUN ===`);
@@ -293,6 +306,24 @@ export async function executePromptViaBrowserAgent(
     },
   });
 
+  const langsmith = trace
+    ? buildLangSmithProviderOptions(
+        {
+          thread_id: trace.sessionId,
+          session_id: trace.sessionId,
+          scrape_id: trace.scrapeId,
+          team_id: trace.teamId,
+          browser_id: browserId,
+          mode: "prompt",
+          zeroDataRetention: trace.zeroDataRetention,
+        } satisfies InteractTraceMetadata,
+        {
+          name: "interact:prompt",
+          extra: { prompt_length: prompt.length },
+        },
+      )
+    : undefined;
+
   try {
     const result = await generateText({
       model: getModel("gemini-2.5-flash", "google"),
@@ -311,6 +342,7 @@ export async function executePromptViaBrowserAgent(
       tools: { browser: browserTool },
       stopWhen: stepCountIs(MAX_STEPS),
       temperature: 0,
+      ...(langsmith ? { providerOptions: { langsmith } } : {}),
       prepareStep: async ({ stepNumber, messages }) => {
         if (actionLog.length === 0) return {};
         return {

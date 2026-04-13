@@ -39,6 +39,8 @@ import {
   executePromptViaBrowserAgent,
   AgentResult,
 } from "../../lib/scrape-interact/browser-agent";
+import { traceInteract } from "../../lib/scrape-interact/langsmith";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { RequestWithAuth, ScrapeOptions } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
@@ -217,6 +219,11 @@ export async function scrapeInteractController(
   updateBrowserSessionActivity(session.id).catch(() => {});
 
   // --- Execute: prompt-based agent loop OR direct code ---
+  //
+  // Skip LangSmith tracing entirely for teams with forced zero-data-retention,
+  // matching how tracking.ts skips ClickHouse writes. The trace would otherwise
+  // ship the full prompt, tool I/O, and page snapshots to a third party.
+  const zdrForced = getScrapeZDR(req.acuc?.flags) === "forced";
 
   let execResult: BrowserServiceExecResponse | AgentResult;
 
@@ -231,6 +238,12 @@ export async function scrapeInteractController(
         session.browser_id,
         timeout,
         logger,
+        {
+          sessionId: session.id,
+          scrapeId,
+          teamId: req.auth.team_id,
+          zeroDataRetention: zdrForced,
+        },
       );
     } catch (err) {
       logger.error("Agent loop failed", { error: err });
@@ -252,12 +265,29 @@ export async function scrapeInteractController(
   } else {
     logger.info("Executing code in browser session", { language, timeout });
 
+    const execCode = traceInteract(
+      async () =>
+        browserServiceRequest<BrowserServiceExecResponse>(
+          "POST",
+          `/browsers/${session!.browser_id}/exec`,
+          { code: rawCode!, language, timeout, origin },
+        ),
+      {
+        thread_id: session.id,
+        session_id: session.id,
+        scrape_id: scrapeId,
+        team_id: req.auth.team_id,
+        browser_id: session.browser_id,
+        mode: "code",
+        zeroDataRetention: zdrForced,
+      },
+      {
+        name: "interact:code",
+      },
+    );
+
     try {
-      execResult = await browserServiceRequest<BrowserServiceExecResponse>(
-        "POST",
-        `/browsers/${session.browser_id}/exec`,
-        { code: rawCode!, language, timeout, origin },
-      );
+      execResult = await execCode();
     } catch (err) {
       logger.error("Failed to execute code via browser service", {
         error: err,
