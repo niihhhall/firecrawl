@@ -113,11 +113,11 @@ function waitForDrain(): Promise<void> {
     const listeners: Record<string, any> = {};
 
     const cleanup = () => {
+      clearTimeout(listeners.timeout);
       if (!channel) return;
       channel.removeListener("drain", listeners.drain);
       channel.removeListener("error", listeners.error);
       channel.removeListener("close", listeners.close);
-      clearTimeout(listeners.timeout);
     };
 
     listeners.drain = () => {
