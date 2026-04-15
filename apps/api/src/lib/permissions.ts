@@ -1,5 +1,5 @@
 import { TeamFlags } from "../controllers/v2/types";
-import { getScrapeZDR } from "./zdr-helpers";
+import { getScrapeZDR, getIgnoreRobots } from "./zdr-helpers";
 
 type LocationOptions = { country?: string };
 
@@ -9,6 +9,9 @@ interface APIRequest {
   scrapeOptions?: {
     location?: LocationOptions;
   };
+  // crawl-specific fields (flattened from crawlerOptions)
+  ignoreRobotsTxt?: boolean;
+  robotsUserAgent?: string;
 }
 
 const SUPPORT_EMAIL = "support@firecrawl.com";
@@ -19,9 +22,25 @@ export function checkPermissions(
 ): { error?: string } {
   // zdr perms — scrapeZDR must be 'allowed' or 'forced' for request-scoped ZDR
   const scrapeMode = getScrapeZDR(flags);
-  if (request.zeroDataRetention && scrapeMode !== "allowed" && scrapeMode !== "forced") {
+  if (
+    request.zeroDataRetention &&
+    scrapeMode !== "allowed" &&
+    scrapeMode !== "forced"
+  ) {
     return {
       error: `Zero Data Retention (ZDR) is not enabled for your team. Contact ${SUPPORT_EMAIL} to enable this feature.`,
+    };
+  }
+
+  // robots perms — ignoreRobots must be 'allowed' or 'forced' for ignoreRobotsTxt and robotsUserAgent
+  const robotsMode = getIgnoreRobots(flags);
+  if (
+    (request.ignoreRobotsTxt || request.robotsUserAgent) &&
+    robotsMode !== "allowed" &&
+    robotsMode !== "forced"
+  ) {
+    return {
+      error: `Ignoring robots.txt is not enabled for your team. Contact ${SUPPORT_EMAIL} to enable this feature.`,
     };
   }
 
