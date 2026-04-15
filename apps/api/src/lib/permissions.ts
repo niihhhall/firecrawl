@@ -32,15 +32,24 @@ export function checkPermissions(
     };
   }
 
-  // robots perms — ignoreRobots must be 'allowed' or 'forced' for ignoreRobotsTxt and robotsUserAgent
+  // robots perms — ignoreRobots must be 'allowed' or 'forced'
   const robotsMode = getIgnoreRobots(flags);
   if (
-    (request.ignoreRobotsTxt || request.robotsUserAgent) &&
+    request.ignoreRobotsTxt &&
     robotsMode !== "allowed" &&
     robotsMode !== "forced"
   ) {
     return {
-      error: `Ignoring robots.txt is not enabled for your team. Contact ${SUPPORT_EMAIL} to enable this feature.`,
+      error: `The ignoreRobotsTxt parameter is an enterprise feature. Contact ${SUPPORT_EMAIL} to enable it for your team.`,
+    };
+  }
+  if (
+    request.robotsUserAgent &&
+    robotsMode !== "allowed" &&
+    robotsMode !== "forced"
+  ) {
+    return {
+      error: `The robotsUserAgent parameter is an enterprise feature. Contact ${SUPPORT_EMAIL} to enable it for your team.`,
     };
   }
 
