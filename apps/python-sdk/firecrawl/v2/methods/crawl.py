@@ -513,6 +513,8 @@ def crawl_params_preview(client: HttpClient, request: CrawlParamsRequest) -> Cra
             "crawlEntireDomain": "crawl_entire_domain",
             "allowExternalLinks": "allow_external_links",
             "allowSubdomains": "allow_subdomains",
+            "ignoreRobotsTxt": "ignore_robots_txt",
+            "robotsUserAgent": "robots_user_agent",
             "maxConcurrency": "max_concurrency",
             "scrapeOptions": "scrape_options",
             "zeroDataRetention": "zero_data_retention"
