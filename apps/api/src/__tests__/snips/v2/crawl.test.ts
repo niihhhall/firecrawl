@@ -532,13 +532,19 @@ describe("Crawl tests", () => {
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "accepts robotsUserAgent parameter",
     async () => {
+      const robotsIdentity = await idmux({
+        name: "crawl/robotsUserAgent",
+        credits: 10000,
+        flags: { ignoreRobots: "allowed" },
+      });
+
       const results = await crawl(
         {
           url: base,
           limit: 3,
           robotsUserAgent: "MyCustomBot",
         },
-        identity,
+        robotsIdentity,
       );
 
       expect(results.success).toBe(true);
