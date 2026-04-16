@@ -32,13 +32,20 @@ export function getSearchZDR(flags: TeamFlags | undefined): ZDRMode {
 
 /**
  * Resolves the effective ignoreRobots mode from team flags.
- *
- * Handles both the new enum format ("disabled"/"allowed"/"forced") and
- * the legacy boolean format for backward compatibility during migration.
  */
 export function getIgnoreRobots(flags: TeamFlags | undefined): OrgFlagMode {
-  if (flags?.ignoreRobots === "forced" || flags?.ignoreRobots === true)
-    return "forced";
+  if (flags?.ignoreRobots === "forced") return "forced";
   if (flags?.ignoreRobots === "allowed") return "allowed";
+  return "disabled";
+}
+
+/**
+ * Resolves the effective customRobotsAgent mode from team flags.
+ * Only supports "disabled" (default) and "allowed" — no "forced" mode.
+ */
+export function getCustomRobotsAgent(
+  flags: TeamFlags | undefined,
+): "disabled" | "allowed" {
+  if (flags?.customRobotsAgent === "allowed") return "allowed";
   return "disabled";
 }

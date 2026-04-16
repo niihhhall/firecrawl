@@ -1,16 +1,10 @@
 import robotsParser, { Robot } from "robots-parser";
-import { config } from "../config";
 import { Logger } from "winston";
 import { ScrapeOptions, scrapeOptions } from "../controllers/v2/types";
 import { scrapeURL } from "../scraper/scrapeURL";
 import { CostTracking } from "./cost-tracking";
-import { useIndex } from "../services";
 
 const ROBOTS_MAX_AGE = 1 * 24 * 60 * 60 * 1000;
-
-const useFireEngine =
-  config.FIRE_ENGINE_BETA_URL !== "" &&
-  config.FIRE_ENGINE_BETA_URL !== undefined;
 
 interface RobotsTxtChecker {
   robotsTxtUrl: string;
@@ -23,10 +17,14 @@ export async function fetchRobotsTxt(
     url,
     zeroDataRetention,
     location,
+    headers,
+    skipCache,
   }: {
     url: string;
     zeroDataRetention: boolean;
     location?: ScrapeOptions["location"];
+    headers?: Record<string, string>;
+    skipCache?: boolean;
   },
   scrapeId: string,
   logger: Logger,
@@ -42,8 +40,9 @@ export async function fetchRobotsTxt(
     scrapeOptions.parse({
       formats: ["rawHtml"],
       timeout: 8000,
-      maxAge: ROBOTS_MAX_AGE,
+      maxAge: skipCache ? 0 : ROBOTS_MAX_AGE,
       ...(location ? { location } : {}),
+      ...(headers ? { headers } : {}),
     }),
     {
       externalAbort: abort

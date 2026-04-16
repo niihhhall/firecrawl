@@ -528,6 +528,31 @@ describe("Crawl tests", () => {
     10 * scrapeTimeout,
   );
 
+  concurrentIf(TEST_PRODUCTION)(
+    "accepts robotsUserAgent parameter",
+    async () => {
+      const robotsIdentity = await idmux({
+        name: "crawl/robotsUserAgent",
+        credits: 10000,
+        flags: { customRobotsAgent: "allowed" },
+      });
+
+      const results = await crawl(
+        {
+          url: base,
+          limit: 3,
+          robotsUserAgent: "MyCustomBot",
+        },
+        robotsIdentity,
+      );
+
+      expect(results.success).toBe(true);
+      expect(results.status).toBe("completed");
+      expect(results.completed).toBeGreaterThan(0);
+    },
+    10 * scrapeTimeout,
+  );
+
   concurrentIf(TEST_PRODUCTION || HAS_PROXY)(
     "shows warning when crawl results ≤ 1 and URL is not base domain",
     async () => {
