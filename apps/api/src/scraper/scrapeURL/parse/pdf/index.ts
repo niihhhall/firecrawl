@@ -29,7 +29,42 @@ import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 import { isPdf } from "./pdf-utils";
 import { comparePdfOutputs } from "./shadow-comparison";
 
-/** Check if the PDF is eligible for Rust extraction, returning a rejection reason or null. */
+type ShadowCandidate = {
+  rustMarkdown: string;
+  pdfType: string;
+  confidence: number;
+  isComplex: boolean;
+  ineligibleReason: string | null;
+  pagesNeedingOcr?: number[];
+};
+
+type DetectOutcome = {
+  pageCount: number;
+  title?: string;
+  result?: PDFProcessorResult;
+  shadow?: ShadowCandidate;
+  ocrRequired?: string;
+};
+
+function childMeta(meta: Meta, method: string): Meta {
+  return { ...meta, logger: meta.logger.child({ method }) };
+}
+
+function captureScrape(meta: Meta, error: unknown): void {
+  captureExceptionWithZdrCheck(error, {
+    extra: {
+      zeroDataRetention: meta.internalOptions.zeroDataRetention ?? false,
+      scrapeId: meta.id,
+      teamId: meta.internalOptions.teamId,
+      url: meta.url,
+    },
+  });
+}
+
+function clampPages(pageCount: number, maxPages: number | undefined): number {
+  return maxPages ? Math.min(pageCount, maxPages) : pageCount;
+}
+
 function getIneligibleReason(
   result: ReturnType<typeof processPdf>,
 ): string | null {
@@ -41,6 +76,323 @@ function getIneligibleReason(
   return null;
 }
 
+async function withTempPdf<T>(
+  meta: Meta,
+  buffer: Buffer,
+  fn: (tempFilePath: string) => Promise<T>,
+): Promise<T> {
+  const tempFilePath = path.join(
+    os.tmpdir(),
+    `tempFile-${meta.id}--${uuid()}.pdf`,
+  );
+  await writeFile(tempFilePath, buffer);
+  try {
+    return await fn(tempFilePath);
+  } finally {
+    try {
+      await unlink(tempFilePath);
+    } catch (error) {
+      meta.logger?.warn("Failed to clean up temporary PDF file", {
+        error,
+        tempFilePath,
+      });
+    }
+  }
+}
+
+async function detectLegacy(
+  meta: Meta,
+  tempFilePath: string,
+  mode: PDFMode,
+  maxPages: number | undefined,
+  rustEnabled: boolean,
+): Promise<DetectOutcome> {
+  const logger = meta.logger.child({ method: "scrapePDF/processPdf" });
+  const nativeCtx = { scrapeId: meta.id, url: meta.url };
+  try {
+    const startedAt = Date.now();
+    const r = await withSpan("native.pdf.detect", async span => {
+      const result = detectPdf(tempFilePath, nativeCtx);
+      setSpanAttributes(span, {
+        "native.module": "pdf",
+        "native.pdf_type": result.pdfType,
+        "native.page_count": result.pageCount,
+      });
+      emitNativeLogs(result.logs, meta.logger, "pdf.detect");
+      return result;
+    });
+    logger.info("detectPdf completed", {
+      durationMs: Date.now() - startedAt,
+      pdfType: r.pdfType,
+      pageCount: r.pageCount,
+      url: meta.url,
+      rustEnabled,
+      mode,
+    });
+    return {
+      pageCount: clampPages(r.pageCount, maxPages),
+      title: r.title ?? undefined,
+    };
+  } catch (error) {
+    extractAndEmitNativeLogs(error, meta.logger, "pdf.detect");
+    logger.warn("detectPdf failed", { error, url: meta.url });
+    captureScrape(meta, error);
+    return { pageCount: 0 };
+  }
+}
+
+async function detectAndExtract(
+  meta: Meta,
+  tempFilePath: string,
+  mode: PDFMode,
+  maxPages: number | undefined,
+): Promise<DetectOutcome> {
+  const logger = meta.logger.child({ method: "scrapePDF/processPdf" });
+  const nativeCtx = { scrapeId: meta.id, url: meta.url };
+  try {
+    const startedAt = Date.now();
+    const r = await withSpan("native.pdf.process", async span => {
+      const result = processPdf(tempFilePath, maxPages ?? undefined, nativeCtx);
+      setSpanAttributes(span, {
+        "native.module": "pdf",
+        "native.pdf_type": result.pdfType,
+        "native.page_count": result.pageCount,
+        "native.confidence": result.confidence,
+        "native.is_complex": result.isComplex,
+      });
+      emitNativeLogs(result.logs, meta.logger, "pdf.process");
+      return result;
+    });
+    logger.info("processPdf completed", {
+      durationMs: Date.now() - startedAt,
+      pdfType: r.pdfType,
+      pageCount: r.pageCount,
+      confidence: r.confidence,
+      isComplex: r.isComplex,
+      markdownLength: r.markdown?.length ?? 0,
+      url: meta.url,
+      mode,
+    });
+
+    const ineligibleReason = getIneligibleReason(r);
+    const eligible = !ineligibleReason;
+    logger.info("Rust PDF eligibility", {
+      rust_pdf_eligible: eligible,
+      reason: ineligibleReason ?? "eligible",
+      url: meta.url,
+      pdfType: r.pdfType,
+      isComplex: r.isComplex,
+      pageCount: r.pageCount,
+      confidence: r.confidence,
+      mode,
+    });
+
+    const pageCount = clampPages(r.pageCount, maxPages);
+    const title = r.title ?? undefined;
+
+    // Shadow-compare when Rust produced meaningful output but wasn't eligible
+    // for direct serving (ineligible TextBased or Mixed with substantial text).
+    const charsPerPage = (r.markdown?.length ?? 0) / Math.max(r.pageCount, 1);
+    const shadow: ShadowCandidate | undefined =
+      !eligible &&
+      r.markdown &&
+      config.PDF_SHADOW_COMPARISON_ENABLE &&
+      (r.pdfType === "TextBased" ||
+        (r.pdfType === "Mixed" && charsPerPage >= 200))
+        ? {
+            rustMarkdown: r.markdown,
+            pdfType: r.pdfType,
+            confidence: r.confidence,
+            isComplex: r.isComplex,
+            ineligibleReason,
+            pagesNeedingOcr: r.pagesNeedingOcr,
+          }
+        : undefined;
+
+    if (
+      mode === "fast" &&
+      (r.pdfType === "Scanned" || r.pdfType === "ImageBased")
+    ) {
+      return { pageCount, title, shadow, ocrRequired: r.pdfType };
+    }
+
+    let result: PDFProcessorResult | undefined;
+    if (eligible && r.markdown) {
+      const html = await safeMarkdownToHtml(r.markdown, logger, meta.id);
+      result = { markdown: r.markdown, html };
+    }
+
+    return { pageCount, title, result, shadow };
+  } catch (error) {
+    extractAndEmitNativeLogs(error, meta.logger, "pdf.process");
+    logger.warn("processPdf failed, falling back to MU/PdfParse", {
+      error,
+      url: meta.url,
+    });
+    captureScrape(meta, error);
+    return { pageCount: 0 };
+  }
+}
+
+function scheduleShadowCompare(
+  meta: Meta,
+  shadow: ShadowCandidate,
+  muMarkdown: string,
+  pageCount: number,
+): void {
+  const logger = meta.logger.child({ method: "scrapePDF/shadow-comparison" });
+  const isZdr = !!meta.internalOptions.zeroDataRetention;
+  (async () => {
+    try {
+      const metrics = comparePdfOutputs(shadow.rustMarkdown, muMarkdown);
+      const ocrPages = shadow.pagesNeedingOcr?.length ?? 0;
+      logger.info("shadow comparison complete", {
+        scrapeId: meta.id,
+        url: isZdr ? undefined : meta.url,
+        pageCount,
+        pdfType: shadow.pdfType,
+        confidence: shadow.confidence,
+        isComplex: shadow.isComplex,
+        ineligibleReason: shadow.ineligibleReason,
+        ocrPageCount: ocrPages,
+        ocrPageRatio:
+          pageCount > 0 ? Math.round((ocrPages * 100) / pageCount) / 100 : 0,
+        ...metrics.overall,
+      });
+    } catch (error) {
+      logger.warn("shadow comparison failed", { error });
+    }
+  })();
+}
+
+async function tryFirePDF(
+  meta: Meta,
+  base64Content: string,
+  maxPages: number | undefined,
+  pageCount: number,
+  forced: boolean,
+): Promise<PDFProcessorResult | null> {
+  try {
+    return await scrapePDFWithFirePDF(
+      childMeta(meta, "scrapePDF/fire-pdf"),
+      base64Content,
+      maxPages,
+      pageCount,
+    );
+  } catch (error) {
+    if (error instanceof AbortManagerThrownError) throw error;
+    if (forced) {
+      meta.logger.error("FirePDF failed (forced, no fallback)", {
+        method: "scrapePDF/fire-pdf",
+        error,
+      });
+      throw error;
+    }
+    meta.logger.warn("FirePDF failed -- falling back to MinerU", {
+      method: "scrapePDF/fire-pdf",
+      error,
+    });
+    return null;
+  }
+}
+
+async function tryRunPodMU(
+  meta: Meta,
+  tempFilePath: string,
+  base64Content: string,
+  maxPages: number | undefined,
+  pageCount: number,
+  shadow: ShadowCandidate | undefined,
+): Promise<PDFProcessorResult | null> {
+  const startedAt = Date.now();
+  const expLogger = meta.logger.child({ method: "scrapePDF/MUv1Experiment" });
+  try {
+    const r = await scrapePDFWithRunPodMU(
+      childMeta(meta, "scrapePDF/scrapePDFWithRunPodMU"),
+      tempFilePath,
+      base64Content,
+      maxPages,
+      pageCount,
+    );
+    expLogger.info("MU v1 completed", {
+      durationMs: Date.now() - startedAt,
+      url: meta.url,
+      pages: pageCount,
+      success: true,
+    });
+    if (shadow && r?.markdown && config.PDF_SHADOW_COMPARISON_ENABLE) {
+      scheduleShadowCompare(meta, shadow, r.markdown, pageCount);
+    }
+    return r;
+  } catch (error) {
+    if (error instanceof AbortManagerThrownError) throw error;
+    meta.logger.warn(
+      "RunPod MU failed to parse PDF (could be due to timeout) -- falling back to parse-pdf",
+      { error },
+    );
+    captureScrape(meta, error);
+    expLogger.info("MU v1 failed", {
+      durationMs: Date.now() - startedAt,
+      url: meta.url,
+      pages: pageCount,
+      success: false,
+    });
+    return null;
+  }
+}
+
+async function ocrFallback(
+  meta: Meta,
+  tempFilePath: string,
+  opts: {
+    forceFirePDF: boolean;
+    routeToMinerU: boolean;
+    maxPages: number | undefined;
+    pageCount: number;
+    shadow: ShadowCandidate | undefined;
+  },
+): Promise<PDFProcessorResult | null> {
+  const base64Content = (await readFile(tempFilePath)).toString("base64");
+
+  const useFirePDF =
+    opts.forceFirePDF ||
+    (!opts.routeToMinerU &&
+      config.FIRE_PDF_ENABLE &&
+      config.FIRE_PDF_BASE_URL &&
+      base64Content.length < MAX_FILE_SIZE &&
+      Math.random() * 100 < config.FIRE_PDF_PERCENT);
+
+  if (useFirePDF) {
+    const r = await tryFirePDF(
+      meta,
+      base64Content,
+      opts.maxPages,
+      opts.pageCount,
+      opts.forceFirePDF,
+    );
+    if (r) return r;
+  }
+
+  if (
+    !opts.forceFirePDF &&
+    base64Content.length < MAX_FILE_SIZE &&
+    config.RUNPOD_MU_API_KEY &&
+    config.RUNPOD_MU_POD_ID
+  ) {
+    const r = await tryRunPodMU(
+      meta,
+      tempFilePath,
+      base64Content,
+      opts.maxPages,
+      opts.pageCount,
+      opts.shadow,
+    );
+    if (r) return r;
+  }
+
+  return null;
+}
+
 export async function parsePdfBuffer(
   meta: Meta,
   fetched: Fetched,
@@ -49,11 +401,7 @@ export async function parsePdfBuffer(
     throw new Error("parsePdfBuffer called with non-PDF bytes");
   }
 
-  const shouldParse = shouldParsePDF(meta.options.parsers);
-  const maxPages = getPDFMaxPages(meta.options.parsers);
-  const mode: PDFMode = getPDFMode(meta.options.parsers);
-
-  if (!shouldParse) {
+  if (!shouldParsePDF(meta.options.parsers)) {
     const content = fetched.buffer.toString("base64");
     return {
       url: fetched.url,
@@ -65,414 +413,84 @@ export async function parsePdfBuffer(
     };
   }
 
-  // The downstream native processors (processPdf/detectPdf/MinerU/parsePDF)
-  // all expect a file path, so write the buffer to a temp file once and
-  // clean up in finally. This is the only I/O side-effect of this function.
-  const tempFilePath = path.join(
-    os.tmpdir(),
-    `tempFile-${meta.id}--${uuid()}.pdf`,
-  );
-  await writeFile(tempFilePath, fetched.buffer);
-  const response = {
-    url: fetched.url,
-    status: fetched.status,
-  };
+  const mode = getPDFMode(meta.options.parsers);
+  const maxPages = getPDFMaxPages(meta.options.parsers);
 
-  try {
-    let result: PDFProcessorResult | null = null;
-    let effectivePageCount: number = 0;
-    let metadataTitle: string | undefined;
-    let rustMarkdownForShadow: string | undefined;
-    let shadowPdfType: string | undefined;
-    let shadowConfidence: number | undefined;
-    let shadowIsComplex: boolean | undefined;
-    let shadowIneligibleReason: string | null | undefined;
-    let shadowPagesNeedingOcr: number[] | undefined;
-
+  return withTempPdf(meta, fetched.buffer, async tempFilePath => {
     const forceFirePDF =
       !!meta.options.__forceFirePDF && !!config.FIRE_PDF_BASE_URL;
     const rustEnabled = !!config.PDF_RUST_EXTRACT_ENABLE;
-    const logger = meta.logger.child({ method: "scrapePDF/processPdf" });
 
-    // Route a percentage of traffic directly to MinerU, bypassing Rust extraction.
-    // Forced Fire PDF takes precedence — don't divert those requests.
+    // Route a percentage of traffic directly to MinerU (bypassing Rust).
+    // Forced Fire PDF wins over routing.
     const routeToMinerU =
       !forceFirePDF &&
       config.MINERU_PERCENT > 0 &&
       Math.random() * 100 < config.MINERU_PERCENT;
-
     if (routeToMinerU) {
-      logger.info("Routing to MinerU via MINERU_PERCENT", {
-        mineruPercent: config.MINERU_PERCENT,
-        url: meta.url,
-      });
+      meta.logger
+        .child({ method: "scrapePDF/processPdf" })
+        .info("Routing to MinerU via MINERU_PERCENT", {
+          mineruPercent: config.MINERU_PERCENT,
+          url: meta.url,
+        });
     }
 
-    if (!rustEnabled || mode === "ocr" || forceFirePDF || routeToMinerU) {
-      // Legacy / OCR path: detect metadata only, skip Rust extraction.
-      // When PDF_RUST_EXTRACT_ENABLE is off this is the only path taken,
-      // matching current prod behaviour (detectPdf → MinerU → pdfParse).
-      try {
-        const nativeCtx = {
-          scrapeId: meta.id,
-          url: meta.url,
-        };
-        const startedAt = Date.now();
-        const detection = await withSpan("native.pdf.detect", async span => {
-          const result = detectPdf(tempFilePath, nativeCtx);
-          setSpanAttributes(span, {
-            "native.module": "pdf",
-            "native.pdf_type": result.pdfType,
-            "native.page_count": result.pageCount,
-          });
-          emitNativeLogs(result.logs, meta.logger, "pdf.detect");
-          return result;
-        });
-        const durationMs = Date.now() - startedAt;
+    const useRust =
+      rustEnabled && mode !== "ocr" && !forceFirePDF && !routeToMinerU;
+    const detection = useRust
+      ? await detectAndExtract(meta, tempFilePath, mode, maxPages)
+      : await detectLegacy(meta, tempFilePath, mode, maxPages, rustEnabled);
 
-        logger.info("detectPdf completed", {
-          durationMs,
-          pdfType: detection.pdfType,
-          pageCount: detection.pageCount,
-          url: meta.url,
-          rustEnabled,
-          mode,
-        });
-
-        effectivePageCount = maxPages
-          ? Math.min(detection.pageCount, maxPages)
-          : detection.pageCount;
-        metadataTitle = detection.title ?? undefined;
-      } catch (error) {
-        extractAndEmitNativeLogs(error, meta.logger, "pdf.detect");
-        logger.warn("detectPdf failed", {
-          error,
-          url: meta.url,
-        });
-        captureExceptionWithZdrCheck(error, {
-          extra: {
-            zeroDataRetention: meta.internalOptions.zeroDataRetention ?? false,
-            scrapeId: meta.id,
-            teamId: meta.internalOptions.teamId,
-            url: meta.url,
-          },
-        });
-      }
-    } else {
-      // Rust extraction enabled (fast / auto modes).
-      try {
-        const nativeCtx = {
-          scrapeId: meta.id,
-          url: meta.url,
-        };
-        const startedAt = Date.now();
-        const pdfResult = await withSpan("native.pdf.process", async span => {
-          const result = processPdf(
-            tempFilePath,
-            maxPages ?? undefined,
-            nativeCtx,
-          );
-          setSpanAttributes(span, {
-            "native.module": "pdf",
-            "native.pdf_type": result.pdfType,
-            "native.page_count": result.pageCount,
-            "native.confidence": result.confidence,
-            "native.is_complex": result.isComplex,
-          });
-          emitNativeLogs(result.logs, meta.logger, "pdf.process");
-          return result;
-        });
-        const durationMs = Date.now() - startedAt;
-
-        logger.info("processPdf completed", {
-          durationMs,
-          pdfType: pdfResult.pdfType,
-          pageCount: pdfResult.pageCount,
-          confidence: pdfResult.confidence,
-          isComplex: pdfResult.isComplex,
-          markdownLength: pdfResult.markdown?.length ?? 0,
-          url: meta.url,
-          mode,
-        });
-
-        effectivePageCount = maxPages
-          ? Math.min(pdfResult.pageCount, maxPages)
-          : pdfResult.pageCount;
-        metadataTitle = pdfResult.title ?? undefined;
-
-        const ineligibleReason = getIneligibleReason(pdfResult);
-        const eligible = !ineligibleReason;
-
-        logger.info("Rust PDF eligibility", {
-          rust_pdf_eligible: eligible,
-          reason: ineligibleReason ?? "eligible",
-          url: meta.url,
-          pdfType: pdfResult.pdfType,
-          isComplex: pdfResult.isComplex,
-          pageCount: pdfResult.pageCount,
-          confidence: pdfResult.confidence,
-          mode,
-        });
-
-        // Shadow-compare when Rust produced meaningful output but wasn't
-        // eligible for direct serving. Includes:
-        // - Ineligible TextBased (complex layouts, lower confidence)
-        // - Mixed PDFs with substantial extracted text (invisible OCR layers)
-        const charsPerPage =
-          (pdfResult.markdown?.length ?? 0) / Math.max(pdfResult.pageCount, 1);
-        const shadowEligible =
-          !eligible &&
-          pdfResult.markdown &&
-          config.PDF_SHADOW_COMPARISON_ENABLE &&
-          (pdfResult.pdfType === "TextBased" ||
-            (pdfResult.pdfType === "Mixed" && charsPerPage >= 200));
-
-        rustMarkdownForShadow = shadowEligible ? pdfResult.markdown : undefined;
-        if (shadowEligible) {
-          shadowPdfType = pdfResult.pdfType;
-          shadowConfidence = pdfResult.confidence;
-          shadowIsComplex = pdfResult.isComplex;
-          shadowIneligibleReason = ineligibleReason;
-          shadowPagesNeedingOcr = pdfResult.pagesNeedingOcr;
-        }
-
-        // In fast mode, if the PDF requires OCR, fail immediately with a
-        // clear error instead of returning empty content.
-        if (
-          mode === "fast" &&
-          (pdfResult.pdfType === "Scanned" ||
-            pdfResult.pdfType === "ImageBased")
-        ) {
-          throw new PDFOCRRequiredError(pdfResult.pdfType);
-        }
-
-        if (eligible && pdfResult.markdown) {
-          const html = await safeMarkdownToHtml(
-            pdfResult.markdown,
-            logger,
-            meta.id,
-          );
-          result = { markdown: pdfResult.markdown, html };
-        }
-      } catch (error) {
-        if (error instanceof PDFOCRRequiredError) {
-          throw error;
-        }
-        extractAndEmitNativeLogs(error, meta.logger, "pdf.process");
-        logger.warn("processPdf failed, falling back to MU/PdfParse", {
-          error,
-          url: meta.url,
-        });
-        captureExceptionWithZdrCheck(error, {
-          extra: {
-            zeroDataRetention: meta.internalOptions.zeroDataRetention ?? false,
-            scrapeId: meta.id,
-            teamId: meta.internalOptions.teamId,
-            url: meta.url,
-          },
-        });
-        // effectivePageCount stays 0 — skip time budget check
-      }
+    if (detection.ocrRequired) {
+      throw new PDFOCRRequiredError(detection.ocrRequired);
     }
 
-    // Only enforce the per-page time budget when we need MU/fallback.
+    let result = detection.result ?? null;
+
+    // Only enforce the per-page budget when we need an OCR/MU pass.
     // Rust extraction is fast enough that the constraint doesn't apply.
     if (
       !result &&
-      effectivePageCount > 0 &&
-      effectivePageCount * MILLISECONDS_PER_PAGE >
+      detection.pageCount > 0 &&
+      detection.pageCount * MILLISECONDS_PER_PAGE >
         (meta.abort.scrapeTimeout() ?? Infinity)
     ) {
       throw new PDFInsufficientTimeError(
-        effectivePageCount,
-        effectivePageCount * MILLISECONDS_PER_PAGE + 5000,
+        detection.pageCount,
+        detection.pageCount * MILLISECONDS_PER_PAGE + 5000,
       );
     }
 
-    // OCR / MU fallback.
-    // Skipped only when Rust extraction is enabled AND mode is "fast",
-    // unless we explicitly routed to MinerU via MINERU_PERCENT.
     const skipOCR = rustEnabled && mode === "fast" && !routeToMinerU;
     if (!result && !skipOCR) {
-      const base64Content = (await readFile(tempFilePath)).toString("base64");
-
-      // Route a percentage of traffic to Fire PDF instead of MinerU.
-      // forceFirePDF always wins; skip percentage-based Fire PDF when
-      // we explicitly routed to MinerU via MINERU_PERCENT.
-      const useFirePDF =
-        forceFirePDF ||
-        (!routeToMinerU &&
-          config.FIRE_PDF_ENABLE &&
-          config.FIRE_PDF_BASE_URL &&
-          base64Content.length < MAX_FILE_SIZE &&
-          Math.random() * 100 < config.FIRE_PDF_PERCENT);
-
-      if (useFirePDF) {
-        try {
-          result = await scrapePDFWithFirePDF(
-            {
-              ...meta,
-              logger: meta.logger.child({
-                method: "scrapePDF/fire-pdf",
-              }),
-            },
-            base64Content,
-            maxPages,
-            effectivePageCount,
-          );
-        } catch (error) {
-          if (error instanceof AbortManagerThrownError) {
-            throw error;
-          }
-          if (forceFirePDF) {
-            meta.logger.error("FirePDF failed (forced, no fallback)", {
-              method: "scrapePDF/fire-pdf",
-              error,
-            });
-            throw error;
-          }
-          meta.logger.warn("FirePDF failed -- falling back to MinerU", {
-            method: "scrapePDF/fire-pdf",
-            error,
-          });
-        }
-      }
-
-      if (
-        !result &&
-        !forceFirePDF &&
-        base64Content.length < MAX_FILE_SIZE &&
-        config.RUNPOD_MU_API_KEY &&
-        config.RUNPOD_MU_POD_ID
-      ) {
-        const muV1StartedAt = Date.now();
-        try {
-          result = await scrapePDFWithRunPodMU(
-            {
-              ...meta,
-              logger: meta.logger.child({
-                method: "scrapePDF/scrapePDFWithRunPodMU",
-              }),
-            },
-            tempFilePath,
-            base64Content,
-            maxPages,
-            effectivePageCount,
-          );
-          const muV1DurationMs = Date.now() - muV1StartedAt;
-          meta.logger
-            .child({ method: "scrapePDF/MUv1Experiment" })
-            .info("MU v1 completed", {
-              durationMs: muV1DurationMs,
-              url: meta.url,
-              pages: effectivePageCount,
-              success: true,
-            });
-
-          if (
-            rustMarkdownForShadow &&
-            result?.markdown &&
-            config.PDF_SHADOW_COMPARISON_ENABLE
-          ) {
-            const shadowRust = rustMarkdownForShadow;
-            const shadowMu = result.markdown;
-            const shadowLogger = meta.logger.child({
-              method: "scrapePDF/shadow-comparison",
-            });
-            const isZdr = !!meta.internalOptions.zeroDataRetention;
-
-            (async () => {
-              try {
-                const metrics = comparePdfOutputs(shadowRust, shadowMu);
-                shadowLogger.info("shadow comparison complete", {
-                  scrapeId: meta.id,
-                  url: isZdr ? undefined : meta.url,
-                  pageCount: effectivePageCount,
-                  pdfType: shadowPdfType,
-                  confidence: shadowConfidence,
-                  isComplex: shadowIsComplex,
-                  ineligibleReason: shadowIneligibleReason,
-                  ocrPageCount: shadowPagesNeedingOcr?.length ?? 0,
-                  ocrPageRatio:
-                    effectivePageCount > 0
-                      ? Math.round(
-                          ((shadowPagesNeedingOcr?.length ?? 0) * 100) /
-                            effectivePageCount,
-                        ) / 100
-                      : 0,
-                  ...metrics.overall,
-                });
-              } catch (error) {
-                shadowLogger.warn("shadow comparison failed", { error });
-              }
-            })();
-          }
-        } catch (error) {
-          if (error instanceof AbortManagerThrownError) {
-            throw error;
-          }
-          meta.logger.warn(
-            "RunPod MU failed to parse PDF (could be due to timeout) -- falling back to parse-pdf",
-            { error },
-          );
-          captureExceptionWithZdrCheck(error, {
-            extra: {
-              zeroDataRetention:
-                meta.internalOptions.zeroDataRetention ?? false,
-              scrapeId: meta.id,
-              teamId: meta.internalOptions.teamId,
-              url: meta.url,
-            },
-          });
-          const muV1DurationMs = Date.now() - muV1StartedAt;
-          meta.logger
-            .child({ method: "scrapePDF/MUv1Experiment" })
-            .info("MU v1 failed", {
-              durationMs: muV1DurationMs,
-              url: meta.url,
-              pages: effectivePageCount,
-              success: false,
-            });
-        }
-      }
+      result = await ocrFallback(meta, tempFilePath, {
+        forceFirePDF,
+        routeToMinerU,
+        maxPages,
+        pageCount: detection.pageCount,
+        shadow: detection.shadow,
+      });
     }
 
-    // Final fallback to PdfParse (skipped when Fire PDF is forced).
     if (!result && !forceFirePDF) {
       result = await scrapePDFWithParsePDF(
-        {
-          ...meta,
-          logger: meta.logger.child({
-            method: "scrapePDF/scrapePDFWithParsePDF",
-          }),
-        },
+        childMeta(meta, "scrapePDF/scrapePDFWithParsePDF"),
         tempFilePath,
       );
     }
 
     return {
-      url: response.url,
-      statusCode: response.status,
+      url: fetched.url,
+      statusCode: fetched.status,
       html: result?.html ?? "",
       markdown: result?.markdown ?? "",
       pdfMetadata: {
-        numPages: effectivePageCount,
-        title: metadataTitle,
+        numPages: detection.pageCount,
+        title: detection.title,
       },
-
       contentType: "application/pdf",
       proxyUsed: fetched.proxyUsed ?? "basic",
     };
-  } finally {
-    // Always clean up temp file after we're done with it
-    try {
-      await unlink(tempFilePath);
-    } catch (error) {
-      // Ignore errors when cleaning up temp files
-      meta.logger?.warn("Failed to clean up temporary PDF file", {
-        error,
-        tempFilePath,
-      });
-    }
-  }
+  });
 }

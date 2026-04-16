@@ -57,12 +57,7 @@ import { sendDocumentToSearchIndex } from "./emit/search-index";
 import { sendDocumentToIndex } from "./emit/cache-write";
 import { shapeForFormats } from "./shape";
 import { useSearchIndex } from "../../services/index";
-import {
-  fetchProxy,
-  fetchViaGateway,
-  fetchViaCdp,
-  type SelectedProxy,
-} from "./fetch/network";
+import { fetchProxy, fetchViaGateway, fetchViaCdp } from "./fetch/network";
 import { scrapeURLWithWikipedia, isWikimediaUrl } from "./fetch/wikipedia";
 import { scrapeURLWithIndex } from "./fetch/cache-lookup";
 import { IndexMissError } from "./error";
@@ -254,23 +249,18 @@ function decodeHtml(buf: Buffer): string {
 }
 
 function toHtmlResult(f: Fetched): EngineScrapeResult {
-  const result: EngineScrapeResult = {
+  return {
     url: f.url,
     html: decodeHtml(f.buffer),
     statusCode: f.status,
     contentType: f.contentType,
     proxyUsed: f.proxyUsed,
+    error: f.pageError,
+    screenshot: f.screenshots?.[0],
+    actions: f.actions,
+    youtubeTranscriptContent: f.youtubeTranscriptContent,
+    timezone: f.timezone,
   };
-  if (f.pageError) result.error = f.pageError;
-  if (f.screenshots && f.screenshots.length > 0) {
-    result.screenshot = f.screenshots[0];
-  }
-  if (f.actions) result.actions = f.actions;
-  if (f.youtubeTranscriptContent !== undefined) {
-    result.youtubeTranscriptContent = f.youtubeTranscriptContent;
-  }
-  if (f.timezone) result.timezone = f.timezone;
-  return result;
 }
 
 function enforceZdrLimits(meta: Meta): void {

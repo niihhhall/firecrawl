@@ -41,7 +41,7 @@ const TERMINAL_STATUS_ERRORS = [
 
 const fireEngineURL = config.FIRE_ENGINE_BETA_URL ?? "<mock-fire-engine-url>";
 
-export type SelectedProxy = { proxy: string; isMobile: boolean };
+type SelectedProxy = { proxy: string; isMobile: boolean };
 
 const PROXY_API_TIMEOUT_MS = config.ENV === "local" ? 2500 : 500;
 
@@ -253,8 +253,6 @@ function buildCdpRequest(
   };
 }
 
-// ---- fire-engine HTTP -----------------------------------------------------
-
 const cdpSuccessSchema = z.object({
   jobId: z.string().optional(),
   timeTaken: z.number(),
@@ -315,64 +313,20 @@ const cdpProcessingSchema = z.object({
 
 const cdpFailedSchema = z.object({ error: z.string() });
 
-async function performCdpScrape(
-  meta: Meta,
-  request: CdpRequest,
-): Promise<CdpSuccess> {
-  const started = Date.now();
-  const baseUrl = fireEngineURL;
-  const submit = await submitCdpJob(meta, request, baseUrl);
-  let status: CdpSuccess;
-  const jobId = "jobId" in submit ? submit.jobId : undefined;
-  try {
-    status =
-      "processing" in submit && submit.processing
-        ? await pollCdpStatus(meta, submit.jobId, baseUrl)
-        : (submit as CdpSuccess);
+type CdpProcessing = { processing: true; jobId: string };
+type CdpResult = CdpSuccess | CdpProcessing;
 
-    const contentType =
-      Object.entries(status.responseHeaders ?? {}).find(
-        ([name]) => name.toLowerCase() === "content-type",
-      )?.[1] ?? "";
-    if (contentType.includes("application/json")) {
-      status.content = await getInnerJson(status.content);
-    }
-    if (status.file) {
-      status.content = Buffer.from(status.file.content, "base64").toString(
-        "utf8",
-      );
-      delete status.file;
-    }
-  } finally {
-    if (jobId) {
-      fireEngineDelete(meta.logger, jobId, baseUrl).catch(e => {
-        meta.logger.error("Failed to delete job from Fire Engine", {
-          error: e,
-        });
-      });
-    }
-  }
-
-  meta.logger.debug("chrome-cdp scrape complete", {
-    status: status.pageStatusCode,
-    elapsedMs: Date.now() - started,
-  });
-  return status;
+function isProcessing(r: CdpResult): r is CdpProcessing {
+  return "processing" in r && r.processing === true;
 }
 
-async function submitCdpJob(
+async function fireEngineCall(
   meta: Meta,
-  request: CdpRequest,
-  baseUrl: string,
-): Promise<CdpSuccess | z.infer<typeof cdpProcessingSchema>> {
-  let raw = await fetchFireEngine(
-    meta,
-    `${baseUrl}/scrape`,
-    "POST",
-    request,
-    true,
-  );
-
+  method: "GET" | "POST",
+  url: string,
+  body?: unknown,
+): Promise<CdpResult> {
+  let raw = await fetchFireEngine(meta, url, method, body, true);
   if (!raw.content && raw.docUrl) {
     const doc = await getDocFromGCS(raw.docUrl.split("/").pop() ?? "");
     if (doc) {
@@ -393,18 +347,57 @@ async function submitCdpJob(
   }
 
   const processing = cdpProcessingSchema.safeParse(raw);
-  if (processing.success) return processing.data;
+  if (processing.success) {
+    return { processing: true, jobId: processing.data.jobId };
+  }
 
   const failed = cdpFailedSchema.safeParse(raw);
-  if (failed.success) {
-    throwCdpError(meta, failed.data.error);
+  if (failed.success) throwCdpError(meta, failed.data.error);
+
+  throw new Error("fire-engine response did not match any schema", {
+    cause: { raw },
+  });
+}
+
+async function performCdpScrape(
+  meta: Meta,
+  request: CdpRequest,
+): Promise<CdpSuccess> {
+  const started = Date.now();
+  const baseUrl = fireEngineURL;
+  const submit = await fireEngineCall(
+    meta,
+    "POST",
+    `${baseUrl}/scrape`,
+    request,
+  );
+  const jobId = submit.jobId;
+  try {
+    const status = isProcessing(submit)
+      ? await pollCdpStatus(meta, submit.jobId, baseUrl)
+      : submit;
+
+    const contentType = Object.entries(status.responseHeaders ?? {}).find(
+      ([k]) => k.toLowerCase() === "content-type",
+    )?.[1];
+    if (contentType?.includes("application/json")) {
+      status.content = await getInnerJson(status.content);
+    }
+
+    meta.logger.debug("chrome-cdp scrape complete", {
+      status: status.pageStatusCode,
+      elapsedMs: Date.now() - started,
+    });
+    return status;
+  } finally {
+    if (jobId) {
+      fireEngineDelete(meta.logger, jobId, baseUrl).catch(e => {
+        meta.logger.error("Failed to delete job from Fire Engine", {
+          error: e,
+        });
+      });
+    }
   }
-  meta.logger.debug("Scrape returned response not matched by any schema", {
-    status: raw,
-  });
-  throw new Error("Check status returned response not matched by any schema", {
-    cause: { status: raw },
-  });
 }
 
 function throwCdpError(meta: Meta, error: string): never {
@@ -455,74 +448,28 @@ async function pollCdpStatus(
   while (true) {
     meta.abort.throwIfAborted();
     try {
-      return await checkCdpStatus(meta, jobId, baseUrl);
+      const r = await fireEngineCall(meta, "GET", `${baseUrl}/scrape/${jobId}`);
+      if (!isProcessing(r)) return r;
     } catch (error) {
-      if (error instanceof StillProcessingError) {
-        // keep polling
-      } else if (
+      if (
         TERMINAL_STATUS_ERRORS.some(cls => error instanceof cls) ||
         (error as Error)?.name === "AbortManagerThrownError"
       ) {
         throw error;
-      } else {
-        errors.push(error);
-        meta.logger.debug(
-          `Unexpected error in checkStatus (attempt ${errors.length}/${POLL_ERROR_LIMIT})`,
-          { error, jobId },
-        );
-        if (errors.length >= POLL_ERROR_LIMIT) {
-          throw new Error("Error limit hit on fire-engine status polling", {
-            cause: { errors },
-          });
-        }
+      }
+      errors.push(error);
+      meta.logger.debug(
+        `Unexpected error in checkStatus (attempt ${errors.length}/${POLL_ERROR_LIMIT})`,
+        { error, jobId },
+      );
+      if (errors.length >= POLL_ERROR_LIMIT) {
+        throw new Error("Error limit hit on fire-engine status polling", {
+          cause: { errors },
+        });
       }
     }
     await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
   }
-}
-
-class StillProcessingError extends Error {
-  constructor(public jobId: string) {
-    super(`Job ${jobId} is still processing`);
-  }
-}
-
-async function checkCdpStatus(
-  meta: Meta,
-  jobId: string,
-  baseUrl: string,
-): Promise<CdpSuccess> {
-  let raw = await fetchFireEngine(
-    meta,
-    `${baseUrl}/scrape/${jobId}`,
-    "GET",
-    undefined,
-    true,
-  );
-  if (!raw.content && raw.docUrl) {
-    const doc = await getDocFromGCS(raw.docUrl.split("/").pop() ?? "");
-    if (doc) {
-      raw = { ...raw, ...doc };
-      delete raw.docUrl;
-    }
-  }
-
-  const success = cdpSuccessSchema.safeParse(raw);
-  if (success.success) {
-    if (
-      success.data.pageStatusCode === 415 &&
-      success.data.pageError?.startsWith("Unsupported Media Type:")
-    ) {
-      throw new UnsupportedFileError(success.data.pageError);
-    }
-    return success.data;
-  }
-  if (cdpProcessingSchema.safeParse(raw).success) {
-    throw new StillProcessingError(jobId);
-  }
-  const failed = cdpFailedSchema.safeParse(raw);
-  if (failed.success) throwCdpError(meta, failed.data.error);
-  throw new Error("Unmatched check-status response", { cause: { raw } });
 }
 
 async function fireEngineDelete(
@@ -610,7 +557,9 @@ function unpackCdpResponse(
     url: response.url ?? meta.url,
     status: response.pageStatusCode,
     headers,
-    buffer: Buffer.from(response.content, "utf8"),
+    buffer: response.file
+      ? Buffer.from(response.file.content, "base64")
+      : Buffer.from(response.content, "utf8"),
     contentType,
     screenshots: screenshotForFormat ? [screenshotForFormat] : undefined,
     actions: actionsPayload,

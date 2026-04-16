@@ -147,57 +147,35 @@ function buildAbortManager(
   return manager;
 }
 
+const FEATURE_CHECKS: Record<FeatureFlag, (m: Meta) => boolean> = {
+  actions: m => (m.options.actions?.length ?? 0) > 0,
+  waitFor: m => m.options.waitFor !== 0 && m.options.waitFor !== undefined,
+  screenshot: m => {
+    const s = hasFormatOfType(m.options.formats, "screenshot");
+    return !!s && !s.fullPage;
+  },
+  "screenshot@fullScreen": m => {
+    const s = hasFormatOfType(m.options.formats, "screenshot");
+    return !!s && !!s.fullPage;
+  },
+  branding: m => !!hasFormatOfType(m.options.formats, "branding"),
+  atsv: m => !!m.internalOptions.atsv,
+  location: m => !!m.options.location,
+  mobile: m => !!m.options.mobile,
+  skipTlsVerification: m => !!m.options.skipTlsVerification,
+  useFastMode: m => !!m.options.fastMode,
+  stealthProxy: m =>
+    m.options.proxy === "stealth" || m.options.proxy === "enhanced",
+  disableAdblock: m => m.options.blockAds === false,
+  pdf: () => false,
+  document: () => false,
+};
+
 export function hasFeature(meta: Meta, flag: FeatureFlag): boolean {
-  const { options, internalOptions } = meta;
-  switch (flag) {
-    case "actions":
-      return (options.actions?.length ?? 0) > 0;
-    case "waitFor":
-      return options.waitFor !== 0 && options.waitFor !== undefined;
-    case "screenshot": {
-      const shot = hasFormatOfType(options.formats, "screenshot");
-      return !!shot && !shot.fullPage;
-    }
-    case "screenshot@fullScreen": {
-      const shot = hasFormatOfType(options.formats, "screenshot");
-      return !!shot && !!shot.fullPage;
-    }
-    case "branding":
-      return !!hasFormatOfType(options.formats, "branding");
-    case "atsv":
-      return !!internalOptions.atsv;
-    case "location":
-      return !!options.location;
-    case "mobile":
-      return !!options.mobile;
-    case "skipTlsVerification":
-      return !!options.skipTlsVerification;
-    case "useFastMode":
-      return !!options.fastMode;
-    case "stealthProxy":
-      return options.proxy === "stealth" || options.proxy === "enhanced";
-    case "disableAdblock":
-      return options.blockAds === false;
-    case "pdf":
-    case "document":
-      return false;
-  }
+  return FEATURE_CHECKS[flag](meta);
 }
 
 export function activeFeatures(meta: Meta): Set<FeatureFlag> {
-  const all: FeatureFlag[] = [
-    "actions",
-    "waitFor",
-    "screenshot",
-    "screenshot@fullScreen",
-    "branding",
-    "atsv",
-    "location",
-    "mobile",
-    "skipTlsVerification",
-    "useFastMode",
-    "stealthProxy",
-    "disableAdblock",
-  ];
-  return new Set(all.filter(f => hasFeature(meta, f)));
+  const flags = Object.keys(FEATURE_CHECKS) as FeatureFlag[];
+  return new Set(flags.filter(f => hasFeature(meta, f)));
 }
