@@ -110,6 +110,61 @@ describe("Search Query Builder", () => {
       expect(result.query).toBe("test");
       expect(result.categoryMap.size).toBe(0);
     });
+
+    it("should map arxiv alone without adding a site filter", () => {
+      // When arxiv is the ONLY category, results come from the dedicated
+      // arxiv retrieval API — the builder must NOT add `site:arxiv.org` to
+      // the search query, but still tags arxiv.org in the category map.
+      const result = buildSearchQuery("rag", ["arxiv"]);
+      expect(result.query).toBe("rag");
+      expect(result.categoryMap.get("arxiv.org")).toBe("arxiv");
+      expect(result.categoryMap.size).toBe(1);
+    });
+
+    it("should map arxiv alone in object form without adding a site filter", () => {
+      const result = buildSearchQuery("rag", [{ type: "arxiv" }]);
+      expect(result.query).toBe("rag");
+      expect(result.categoryMap.get("arxiv.org")).toBe("arxiv");
+      expect(result.categoryMap.size).toBe(1);
+    });
+
+    it("should fold site:arxiv.org into the query when arxiv is mixed with another category", () => {
+      // When arxiv is combined with other categories we skip the dedicated
+      // API and let the main search rank arxiv results alongside the others
+      // via `site:arxiv.org`.
+      const result = buildSearchQuery("retrieval augmented generation", [
+        "arxiv",
+        "github",
+      ]);
+      expect(result.query).toContain("site:github.com");
+      expect(result.query).toContain("site:arxiv.org");
+      expect(result.query).toContain(" OR ");
+      expect(result.categoryMap.get("arxiv.org")).toBe("arxiv");
+      expect(result.categoryMap.get("github.com")).toBe("github");
+    });
+
+    it("should fold site:arxiv.org into the query when arxiv is mixed in object form", () => {
+      const result = buildSearchQuery("rag", [
+        { type: "arxiv" },
+        { type: "github" },
+      ]);
+      expect(result.query).toContain("site:github.com");
+      expect(result.query).toContain("site:arxiv.org");
+    });
+
+    it("should fold site:arxiv.org into the query when arxiv is mixed with pdf", () => {
+      const result = buildSearchQuery("rag", ["arxiv", "pdf"]);
+      expect(result.query).toContain("site:arxiv.org");
+      expect(result.query).toContain("filetype:pdf");
+    });
+
+    it("should not duplicate site:arxiv.org when research + arxiv are both selected", () => {
+      const result = buildSearchQuery("rag", ["research", "arxiv"]);
+      const matches = result.query.match(/site:arxiv\.org/g) ?? [];
+      expect(matches.length).toBe(1);
+      // And the map still prefers the more specific arxiv category.
+      expect(result.categoryMap.get("arxiv.org")).toBe("arxiv");
+    });
   });
 
   describe("getCategoryFromUrl", () => {
@@ -198,6 +253,19 @@ describe("Search Query Builder", () => {
       expect(
         getCategoryFromUrl("https://arxiv.org/abs/2024.12345", emptyMap),
       ).toBeUndefined();
+    });
+
+    it("should prefer arxiv over research mapping when arxiv is selected", () => {
+      const arxivMap = new Map<string, string>([
+        ["arxiv.org", "arxiv"],
+        ["nature.com", "research"],
+      ]);
+      expect(
+        getCategoryFromUrl("https://arxiv.org/abs/2503.10677", arxivMap),
+      ).toBe("arxiv");
+      expect(
+        getCategoryFromUrl("https://export.arxiv.org/abs/2503.10677", arxivMap),
+      ).toBe("arxiv");
     });
   });
 
