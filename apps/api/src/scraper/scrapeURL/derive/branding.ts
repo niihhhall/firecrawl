@@ -15,7 +15,9 @@ export async function deriveBrandingFromActions(
       x.type === "object" &&
       x.value !== null &&
       typeof x.value === "object" &&
-      "branding" in x.value,
+      "branding" in x.value &&
+      (x.value as any).branding !== null &&
+      typeof (x.value as any).branding === "object",
   );
 
   if (brandingReturnIndex === -1 || brandingReturnIndex === undefined) {
@@ -25,7 +27,7 @@ export async function deriveBrandingFromActions(
   const javascriptReturn = document.actions!.javascriptReturns![
     brandingReturnIndex
   ].value as any;
-  const rawBranding = javascriptReturn?.branding;
+  const rawBranding = javascriptReturn.branding;
 
   document.actions!.javascriptReturns!.splice(brandingReturnIndex, 1);
   document.branding = await brandingTransformer(meta, document, rawBranding);

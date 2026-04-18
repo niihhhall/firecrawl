@@ -366,7 +366,11 @@ ${escapePromptTags(indexedLines)}
       outputTokens,
     });
 
-    const cleaned = result.text.replace(/^```[\w]*\n?|```$/g, "").trim();
+    const cleaned = result.text
+      .trim()
+      .replace(/^```[\w]*\s*/, "")
+      .replace(/\s*```$/, "")
+      .trim();
     const indices: number[] = JSON.parse(cleaned);
 
     return assembleAnswer(sentences, indices);

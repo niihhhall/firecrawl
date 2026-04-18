@@ -26,6 +26,7 @@ const RULES: Rule[] = [
   { format: "summary", key: "summary", warnStray: true },
   { format: "query", key: "answer", warnStray: true, missingLabel: "query" },
   { format: "branding", key: "branding", warnStray: true },
+  { format: "attributes", key: "attributes", warnStray: true },
   { format: "audio", key: "audio", warnStray: false },
   { format: "changeTracking", key: "changeTracking", warnStray: true },
 ];

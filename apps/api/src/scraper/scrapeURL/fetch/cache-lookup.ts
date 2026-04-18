@@ -64,8 +64,8 @@ async function resolveMaxAge(meta: Meta): Promise<number> {
 
 /**
  * Pick the most relevant row returned by `index_get_recent_4`. Prefer the
- * newest 2xx entry, but if there are fewer than N error rows before it, we
- * fall back to the absolute newest so the caller sees the latest state.
+ * newest 2xx entry, but if N or more error rows sit before it, fall back to
+ * the absolute newest so the caller sees the latest state.
  */
 function pickRow<T extends { status: number }>(rows: T[]): T | null {
   if (rows.length === 0) return null;
