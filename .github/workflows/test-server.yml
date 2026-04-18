@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        engine: ['playwright', 'fetch'] # unsure if we need both of these
+        engine: ['playwright'] # fetch engine disabled: branch refactor dropped the direct-HTTP path
         proxy: ['proxy', 'no-proxy'] # proxy / no-proxy run different tests, keep both
         search: ['searxng'] # disabled google for now, should be fine with just Searxng
         ai: ['openai'] # AI only should be fine, as it simply adds tests, if non-AI fails, AI will fail.
