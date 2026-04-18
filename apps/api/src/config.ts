@@ -102,7 +102,7 @@ const configSchema = z.object({
   FIRE_ENGINE_HTTP_GATEWAY_URL: z.string().optional(),
 
   // Proxy API (fire-proxy service)
-  PROXY_API_URL: z.string().default("http://fire-proxy-api-service:3000"),
+  PROXY_API_URL: z.string().optional(),
 
   // Indexer
   INDEXER_RABBITMQ_URL: z.string().optional(),

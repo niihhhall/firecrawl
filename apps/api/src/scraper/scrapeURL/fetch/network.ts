@@ -25,6 +25,7 @@ import {
 import { getBrandingScript } from "./branding-script-bundler";
 import { shouldRunYoutube } from "../parse/youtube";
 import { robustFetch } from "../lib/fetch";
+import { hasFeature } from "../context";
 
 const BRANDING_DEFAULT_WAIT_MS = 2000;
 const POLL_INTERVAL_MS = 500;
@@ -276,7 +277,7 @@ function buildCdpRequest(
     disableSmartWaitCache: meta.internalOptions.disableSmartWaitCache,
     ...(opts.proxy
       ? { customProxy: opts.proxy.proxy, mobileProxy: opts.proxy.isMobile }
-      : {}),
+      : { mobileProxy: hasFeature(meta, "stealthProxy") }),
     saveScrapeResultToGCS:
       !meta.internalOptions.zeroDataRetention &&
       meta.internalOptions.saveScrapeResultToGCS,
