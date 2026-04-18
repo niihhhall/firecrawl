@@ -460,12 +460,10 @@ describe("V2 Types Validation", () => {
         expect(result.lockdown).toBe(false);
       });
 
-      it("should accept lockdown: true with compatible options", () => {
+      it("should accept lockdown: true", () => {
         const input: ScrapeRequestInput = {
           url: "https://example.com",
           lockdown: true,
-          formats: [{ type: "markdown" }, { type: "html" }],
-          onlyMainContent: true,
         };
 
         const result = scrapeRequestSchema.parse(input);
@@ -503,104 +501,20 @@ describe("V2 Types Validation", () => {
         expect(result.maxAge).toBeUndefined();
       });
 
-      it("should reject lockdown: true with actions", () => {
+      // lockdown takes precedence silently at the engine layer; other options are ignored, not rejected
+      it("should accept lockdown: true alongside any other options", () => {
         const input: ScrapeRequestInput = {
           url: "https://example.com",
           lockdown: true,
           actions: [{ type: "click", selector: "button" }],
-        };
-
-        expect(() => scrapeRequestSchema.parse(input)).toThrow(
-          "actions are not allowed when lockdown is true",
-        );
-      });
-
-      it("should reject lockdown: true with waitFor > 0", () => {
-        const input: ScrapeRequestInput = {
-          url: "https://example.com",
-          lockdown: true,
-          waitFor: 1000,
-          timeout: 30000,
-        };
-
-        expect(() => scrapeRequestSchema.parse(input)).toThrow(
-          "waitFor is not allowed when lockdown is true",
-        );
-      });
-
-      it("should reject lockdown: true with custom headers", () => {
-        const input: ScrapeRequestInput = {
-          url: "https://example.com",
-          lockdown: true,
           headers: { "X-Custom": "value" },
-        };
-
-        expect(() => scrapeRequestSchema.parse(input)).toThrow(
-          "custom headers are not allowed when lockdown is true",
-        );
-      });
-
-      it("should reject lockdown: true with profile", () => {
-        const input: ScrapeRequestInput = {
-          url: "https://example.com",
-          lockdown: true,
           profile: { name: "my-profile" },
-        };
-
-        expect(() => scrapeRequestSchema.parse(input)).toThrow(
-          "profile is not allowed when lockdown is true",
-        );
-      });
-
-      it("should reject lockdown: true with non-auto proxy", () => {
-        const input: ScrapeRequestInput = {
-          url: "https://example.com",
-          lockdown: true,
           proxy: "basic",
-        };
-
-        expect(() => scrapeRequestSchema.parse(input)).toThrow(
-          "proxy is not allowed when lockdown is true",
-        );
-      });
-
-      it("should accept lockdown: true with proxy: auto (default)", () => {
-        const input: ScrapeRequestInput = {
-          url: "https://example.com",
-          lockdown: true,
-          proxy: "auto",
+          formats: [{ type: "markdown" }, { type: "changeTracking" }],
         };
 
         const result = scrapeRequestSchema.parse(input);
         expect(result.lockdown).toBe(true);
-      });
-
-      it("should reject lockdown: true with changeTracking format", () => {
-        const input: ScrapeRequestInput = {
-          url: "https://example.com",
-          lockdown: true,
-          formats: [
-            { type: "markdown" },
-            { type: "changeTracking" },
-          ],
-        };
-
-        expect(() => scrapeRequestSchema.parse(input)).toThrow(
-          "changeTracking format is not allowed when lockdown is true",
-        );
-      });
-
-      it("should accept lockdown: false with any options (no restrictions)", () => {
-        const input: ScrapeRequestInput = {
-          url: "https://example.com",
-          lockdown: false,
-          actions: [{ type: "click", selector: "button" }],
-          headers: { "X-Custom": "value" },
-          proxy: "basic",
-        };
-
-        const result = scrapeRequestSchema.parse(input);
-        expect(result.lockdown).toBe(false);
       });
     });
   });
