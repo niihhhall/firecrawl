@@ -131,10 +131,19 @@ describe("scrape-interact/langsmith (enabled — mocked SDK)", () => {
 
   beforeEach(() => {
     jest.resetModules();
-    process.env.LANGSMITH_API_KEY = "test-fake-key";
-    process.env.LANGSMITH_PROJECT = "test-project";
     createProviderOptionsSpy.mockClear();
     traceableSpy.mockClear();
+    // Mock config with only the fields the module reads so the test is
+    // hermetic — it doesn't depend on the developer's local .env making it
+    // through the zod schema at require time.
+    jest.doMock("../../config", () => ({
+      config: {
+        LANGSMITH_API_KEY: "test-fake-key",
+        LANGSMITH_TRACING: true,
+        LANGSMITH_PROJECT: "test-project",
+        LANGSMITH_ENDPOINT: undefined,
+      },
+    }));
     jest.doMock("langsmith/experimental/vercel", () => ({
       wrapAISDK: () => fakeWrappedFns,
       createLangSmithProviderOptions: createProviderOptionsSpy,
@@ -146,6 +155,7 @@ describe("scrape-interact/langsmith (enabled — mocked SDK)", () => {
 
   afterEach(() => {
     process.env = { ...ORIGINAL_ENV };
+    jest.dontMock("../../config");
     jest.dontMock("langsmith/experimental/vercel");
     jest.dontMock("langsmith/traceable");
   });
