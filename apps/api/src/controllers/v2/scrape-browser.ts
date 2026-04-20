@@ -244,6 +244,13 @@ export async function scrapeInteractController(
         : undefined,
   };
 
+  // Identity fields below team_id — optional, normalized from null → undefined
+  // so LangSmith metadata filters don't match empty strings.
+  const traceIdentity = {
+    orgId: req.auth.org_id ?? undefined,
+    subUserId: req.acuc?.sub_user_id ?? undefined,
+  };
+
   let execResult: BrowserServiceExecResponse | AgentResult;
 
   if (prompt && !rawCode) {
@@ -261,6 +268,7 @@ export async function scrapeInteractController(
           sessionId: session.id,
           scrapeId,
           teamId: req.auth.team_id,
+          ...traceIdentity,
           zeroDataRetention: zdrForced,
           ...traceScrapeContext,
         },
@@ -293,6 +301,7 @@ export async function scrapeInteractController(
           sessionId: session.id,
           scrapeId,
           teamId: req.auth.team_id,
+          ...traceIdentity,
           zeroDataRetention: zdrForced,
           ...traceScrapeContext,
         },

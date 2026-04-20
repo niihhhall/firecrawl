@@ -189,6 +189,8 @@ export interface BrowserAgentTraceContext {
   sessionId: string;
   scrapeId: string;
   teamId: string;
+  orgId?: string;
+  subUserId?: string;
   zeroDataRetention?: boolean;
   scrapeUrl?: string;
   targetUrl?: string;
@@ -319,6 +321,8 @@ export async function executePromptViaBrowserAgent(
           session_id: trace.sessionId,
           scrape_id: trace.scrapeId,
           team_id: trace.teamId,
+          org_id: trace.orgId,
+          sub_user_id: trace.subUserId,
           browser_id: browserId,
           mode: "prompt",
           zeroDataRetention: trace.zeroDataRetention,
@@ -443,6 +447,8 @@ export async function executeCodeViaBrowserSession(
       session_id: trace.sessionId,
       scrape_id: trace.scrapeId,
       team_id: trace.teamId,
+      org_id: trace.orgId,
+      sub_user_id: trace.subUserId,
       browser_id: browserId,
       mode: "code",
       zeroDataRetention: trace.zeroDataRetention,
