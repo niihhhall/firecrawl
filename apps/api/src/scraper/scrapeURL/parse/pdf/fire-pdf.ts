@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { PDFProcessorResult } from "./types";
 import { safeMarkdownToHtml } from "./markdown-to-html";
 import {
+  createPdfCacheKey,
   getPdfResultFromCache,
   savePdfResultToCache,
 } from "../../../../lib/gcs-pdf-cache";
@@ -42,6 +43,23 @@ export async function scrapePDFWithFirePDF(
     pagesProcessed,
   });
 
+  const zdr = meta.internalOptions.zeroDataRetention === true;
+  const pdfSha256 = createPdfCacheKey(base64Content);
+
+  // Explicit deadline contract with fire-pdf (mirrors mineru-api):
+  //   timeout    — remaining scrape-tier budget in ms (from AbortManager)
+  //   created_at — epoch ms when we handed the budget over to fire-pdf
+  // fire-pdf computes remaining = timeout - (now - created_at) and can
+  // return 503 if the budget is spent. scrapeTimeout() returns undefined
+  // if no scrape-tier deadline is set (e.g., internal tests, CLI) — in
+  // that case omit both fields so fire-pdf applies its own default.
+  const fireScrapeTimeout = meta.abort.scrapeTimeout();
+  const deadlineFields: { timeout?: number; created_at?: number } = {};
+  if (fireScrapeTimeout !== undefined && fireScrapeTimeout > 0) {
+    deadlineFields.timeout = Math.floor(fireScrapeTimeout);
+    deadlineFields.created_at = Date.now();
+  }
+
   const resp = await robustFetch({
     url: `${config.FIRE_PDF_BASE_URL}/ocr`,
     method: "POST",
@@ -52,6 +70,15 @@ export async function scrapePDFWithFirePDF(
       pdf: base64Content,
       scrape_id: meta.id,
       ...(maxPages !== undefined && { max_pages: maxPages }),
+      team_id: meta.internalOptions.teamId,
+      ...(meta.internalOptions.crawlId && {
+        crawl_id: meta.internalOptions.crawlId,
+      }),
+      ...(zdr ? {} : { url: meta.url }),
+      pdf_sha256: pdfSha256,
+      source: "firecrawl",
+      zdr,
+      ...deadlineFields,
     },
     logger,
     schema: z.object({

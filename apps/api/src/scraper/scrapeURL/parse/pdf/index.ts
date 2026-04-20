@@ -291,6 +291,18 @@ async function tryFirePDF(
     meta.logger.warn("FirePDF failed -- falling back to MinerU", {
       method: "scrapePDF/fire-pdf",
       error,
+      event: "pdf_engine_fallback",
+      scrape_id: meta.id,
+      team_id: meta.internalOptions.teamId,
+      from_engine: "firepdf",
+      to_engine: "mineru",
+      error_class:
+        (error as { name?: unknown })?.name != null
+          ? String((error as { name?: unknown }).name)
+          : undefined,
+      error_message: String(
+        (error as { message?: unknown })?.message ?? "",
+      ).slice(0, 500),
     });
     return null;
   }
