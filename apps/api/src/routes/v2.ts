@@ -316,6 +316,13 @@ v2Router.delete(
   wrap(crawlCancelController),
 );
 
+v2Router.post(
+  "/batch/scrape/:jobId/complete",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  validateJobIdParam,
+  wrap(crawlCompleteController),
+);
+
 v2Router.get(
   "/batch/scrape/:jobId/errors",
   authMiddleware(RateLimiterMode.CrawlStatus),
