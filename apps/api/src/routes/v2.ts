@@ -16,6 +16,7 @@ import { scrapeStatusController } from "../controllers/v2/scrape-status";
 import { creditUsageController } from "../controllers/v2/credit-usage";
 import { tokenUsageController } from "../controllers/v2/token-usage";
 import { crawlCancelController } from "../controllers/v2/crawl-cancel";
+import { crawlCompleteController } from "../controllers/v2/crawl-complete";
 import { concurrencyCheckController } from "../controllers/v2/concurrency-check";
 import { crawlStatusWSController } from "../controllers/v2/crawl-status-ws";
 import { extractController } from "../controllers/v2/extract";
@@ -282,6 +283,13 @@ v2Router.delete(
   wrap(crawlCancelController),
 );
 
+v2Router.post(
+  "/crawl/:jobId/complete",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  validateJobIdParam,
+  wrap(crawlCompleteController),
+);
+
 v2Router.ws(
   "/crawl/:jobId",
   ((ws: any, req: express.Request, next: (err?: unknown) => void) => {
@@ -457,4 +465,3 @@ if (isX402Enabled()) {
     wrap(x402SearchController),
   );
 }
-
