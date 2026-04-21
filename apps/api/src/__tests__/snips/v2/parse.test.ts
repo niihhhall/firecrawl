@@ -1,6 +1,8 @@
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
+  HAS_AI,
+  TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import { idmux, Identity, parse, parseWithFailure, scrapeTimeout } from "./lib";
@@ -302,4 +304,207 @@ describe("/v2/parse", () => {
     },
     scrapeTimeout,
   );
+
+  it(
+    "rejects waitFor option for parse uploads",
+    async () => {
+      const failure = await parseWithFailure(
+        {
+          options: {
+            formats: ["markdown"],
+            waitFor: 1000,
+          } as any,
+          file: {
+            content: htmlFixture,
+            filename: "upload.html",
+            contentType: "text/html",
+          },
+        },
+        identity,
+      );
+
+      expect(failure.code).toBe("PARSE_UNSUPPORTED_OPTIONS");
+      expect(failure.error).toContain("do not support waitFor");
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "rejects location option for parse uploads",
+    async () => {
+      const failure = await parseWithFailure(
+        {
+          options: {
+            formats: ["markdown"],
+            location: { country: "US" },
+          } as any,
+          file: {
+            content: htmlFixture,
+            filename: "upload.html",
+            contentType: "text/html",
+          },
+        },
+        identity,
+      );
+
+      expect(failure.code).toBe("PARSE_UNSUPPORTED_OPTIONS");
+      expect(failure.error).toContain("do not support location");
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "rejects mobile option for parse uploads",
+    async () => {
+      const failure = await parseWithFailure(
+        {
+          options: {
+            formats: ["markdown"],
+            mobile: true,
+          } as any,
+          file: {
+            content: htmlFixture,
+            filename: "upload.html",
+            contentType: "text/html",
+          },
+        },
+        identity,
+      );
+
+      expect(failure.code).toBe("PARSE_UNSUPPORTED_OPTIONS");
+      expect(failure.error).toContain("do not support mobile");
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "rejects non-basic/auto proxy for parse uploads",
+    async () => {
+      const failure = await parseWithFailure(
+        {
+          options: {
+            formats: ["markdown"],
+            proxy: "stealth",
+          } as any,
+          file: {
+            content: htmlFixture,
+            filename: "upload.html",
+            contentType: "text/html",
+          },
+        },
+        identity,
+      );
+
+      expect(failure.code).toBe("PARSE_UNSUPPORTED_OPTIONS");
+      expect(failure.error).toContain("proxy");
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "rejects screenshot format for parse uploads",
+    async () => {
+      const failure = await parseWithFailure(
+        {
+          options: {
+            formats: ["markdown", { type: "screenshot" }],
+          } as any,
+          file: {
+            content: htmlFixture,
+            filename: "upload.html",
+            contentType: "text/html",
+          },
+        },
+        identity,
+      );
+
+      expect(failure.code).toBe("PARSE_UNSUPPORTED_OPTIONS");
+      expect(failure.error).toContain("do not support screenshot");
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "rejects branding format for parse uploads",
+    async () => {
+      const failure = await parseWithFailure(
+        {
+          options: {
+            formats: ["markdown", { type: "branding" }],
+          } as any,
+          file: {
+            content: htmlFixture,
+            filename: "upload.html",
+            contentType: "text/html",
+          },
+        },
+        identity,
+      );
+
+      expect(failure.code).toBe("PARSE_UNSUPPORTED_OPTIONS");
+      expect(failure.error).toContain("do not support branding");
+    },
+    scrapeTimeout,
+  );
+
+  describeIf(TEST_PRODUCTION || HAS_AI)("AI format parse tests", () => {
+    it(
+      "parses with json format (LLM extraction)",
+      async () => {
+        const result = await parse(
+          {
+            options: {
+              formats: [
+                "markdown",
+                {
+                  type: "json",
+                  prompt: "Extract the heading text",
+                  schema: {
+                    type: "object",
+                    properties: {
+                      heading: { type: "string" },
+                    },
+                    required: ["heading"],
+                  },
+                },
+              ],
+            } as any,
+            file: {
+              content: htmlFixture,
+              filename: "upload.html",
+              contentType: "text/html",
+            },
+          },
+          identity,
+        );
+
+        expect(result.json).toBeDefined();
+        expect(result.json).not.toBeNull();
+      },
+      scrapeTimeout,
+    );
+
+    it(
+      "parses with summary format",
+      async () => {
+        const result = await parse(
+          {
+            options: {
+              formats: ["markdown", { type: "summary" }],
+            } as any,
+            file: {
+              content: htmlFixture,
+              filename: "upload.html",
+              contentType: "text/html",
+            },
+          },
+          identity,
+        );
+
+        expect(result.summary).toBeDefined();
+        expect(typeof result.summary).toBe("string");
+      },
+      scrapeTimeout,
+    );
+  });
 });

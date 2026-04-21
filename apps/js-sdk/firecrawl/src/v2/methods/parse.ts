@@ -40,6 +40,15 @@ export async function parse(
     throw new Error("filename cannot be empty");
   }
 
+  if (file.data == null) {
+    throw new Error("file data cannot be empty");
+  }
+
+  const blob = toUploadBlob(file.data, file.contentType);
+  if (blob.size === 0) {
+    throw new Error("file data cannot be empty");
+  }
+
   if (options) ensureValidParseOptions(options);
 
   const version = getVersion();

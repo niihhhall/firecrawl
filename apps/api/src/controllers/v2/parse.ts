@@ -25,6 +25,7 @@ import { logRequest } from "../../services/logging/log_job";
 import { getErrorContactMessage } from "../../lib/deployment";
 import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import type { BillingMetadata } from "../../services/billing/types";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 import path from "node:path";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
@@ -321,7 +322,8 @@ export async function parseController(
       }
 
       const zeroDataRetention =
-        req.acuc?.flags?.forceZDR || (req.body.zeroDataRetention ?? false);
+        getScrapeZDR(req.acuc?.flags) === "forced" ||
+        (req.body.zeroDataRetention ?? false);
       const billing: BillingMetadata = req.body.__agentInterop
         ? { endpoint: "agent" as const, jobId }
         : { endpoint: "parse" as const, jobId };
@@ -481,6 +483,7 @@ export async function parseController(
                       uploadedFile: file,
                       forceEngine,
                       isParse: true,
+                      agentIndexOnly: (req as any).agentIndexOnly ?? false,
                     },
                     skipNuq: true,
                     origin,
@@ -533,6 +536,19 @@ export async function parseController(
               success: false,
               code: e.code,
               error: e.message,
+            });
+          }
+
+          if (e.code === "AGENT_INDEX_ONLY") {
+            setSpanAttributes(span, {
+              "parse.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+              sponsor_status: "pending",
+              login_url: "https://firecrawl.dev/signin",
             });
           }
 

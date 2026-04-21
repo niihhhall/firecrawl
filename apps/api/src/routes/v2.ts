@@ -232,9 +232,9 @@ v2Router.post(
   "/parse",
   authMiddleware(RateLimiterMode.Scrape),
   countryCheck,
-  checkCreditsMiddleware(1),
   parseUploadMiddleware,
   parseMultipartPayloadMiddleware,
+  checkCreditsMiddleware(1),
   wrap(parseController),
 );
 
@@ -503,4 +503,3 @@ if (isX402Enabled()) {
     wrap(x402SearchController),
   );
 }
-

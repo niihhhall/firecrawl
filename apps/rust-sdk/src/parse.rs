@@ -153,6 +153,12 @@ impl Client {
             ));
         }
 
+        if file.bytes.is_empty() {
+            return Err(FirecrawlError::Misuse(
+                "file content cannot be empty".to_string(),
+            ));
+        }
+
         let options = options.into().unwrap_or_default();
         let options_json =
             serde_json::to_string(&options).map_err(FirecrawlError::ResponseParseError)?;
@@ -227,5 +233,49 @@ mod tests {
     fn test_parse_file_from_missing_path() {
         let result = ParseFile::from_path("/tmp/this-file-should-not-exist-for-parse-sdk-test");
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_parse_error_response() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/parse")
+            .match_header(
+                "content-type",
+                Matcher::Regex("multipart/form-data".to_string()),
+            )
+            .with_status(400)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": false,
+                    "error": "Unsupported upload type."
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let file = ParseFile::from_bytes("upload.xyz", b"not a real file".to_vec());
+        let result = client.parse(file, None).await;
+
+        assert!(result.is_err());
+        mock.assert();
+    }
+
+    #[test]
+    fn test_parse_rejects_empty_bytes() {
+        let file = ParseFile::from_bytes("empty.html", vec![]);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(async {
+            let client = Client::new_selfhosted("http://localhost:9999".to_string(), Some("k"))
+                .unwrap();
+            client.parse(file, None).await
+        });
+
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("empty"), "Expected empty file error, got: {}", err_msg);
     }
 }

@@ -78,6 +78,15 @@ export function ensureValidParseFormats(formats?: ParseFormatOption[]): void {
       if (fmt === "json") {
         throw new Error("json format must be an object with { type: 'json', prompt, schema }");
       }
+      if (fmt === "screenshot") {
+        throw new Error("parse does not support screenshot format");
+      }
+      if (fmt === "changeTracking") {
+        throw new Error("parse does not support changeTracking format");
+      }
+      if (fmt === "branding") {
+        throw new Error("parse does not support branding format");
+      }
       continue;
     }
 
