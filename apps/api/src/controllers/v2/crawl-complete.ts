@@ -1,5 +1,4 @@
 import { Response } from "express";
-import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../lib/logger";
 import { getCrawl } from "../../lib/crawl-redis";
 import * as Sentry from "@sentry/node";
@@ -31,8 +30,10 @@ export async function crawlCompleteController(
       return res.status(409).json({ error: "Crawl is already completed" });
     }
 
-    await crawlFinishedQueue.addJob(
-      uuidv7(),
+    // Use the crawl id as the finish job id so repeated calls dedupe at the
+    // queue_crawl_finished PK and don't enqueue duplicate finish work.
+    await crawlFinishedQueue.addJobIfNotExists(
+      req.params.jobId,
       {},
       {
         priority: 0,
