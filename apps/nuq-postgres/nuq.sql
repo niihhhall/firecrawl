@@ -208,9 +208,13 @@ SELECT cron.schedule('nuq_group_crawl_finished', '15 seconds', $$
       )
     RETURNING id, owner_id
   )
-  INSERT INTO nuq.queue_crawl_finished (data, owner_id, group_id)
-  SELECT '{}'::jsonb, finished_groups.owner_id, finished_groups.id
-  FROM finished_groups;
+  -- Use the crawl/group id as the finish job id so cron-scheduled finishes
+  -- and endpoint-triggered force-completes dedupe at the PK instead of both
+  -- firing finishCrawlSuper (and the completion webhook) for the same crawl.
+  INSERT INTO nuq.queue_crawl_finished (id, data, owner_id, group_id)
+  SELECT finished_groups.id, '{}'::jsonb, finished_groups.owner_id, finished_groups.id
+  FROM finished_groups
+  ON CONFLICT (id) DO NOTHING;
 $$);
 
 SELECT cron.schedule('nuq_group_crawl_clean', '*/5 * * * *', $$
