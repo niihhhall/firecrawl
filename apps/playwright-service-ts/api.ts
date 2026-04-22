@@ -186,12 +186,6 @@ const isValidUrl = (urlString: string): boolean => {
   }
 };
 
-const readStream = async (stream: NodeJS.ReadableStream): Promise<Buffer> => {
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) chunks.push(chunk as Buffer);
-  return Buffer.concat(chunks);
-};
-
 const scrapePage = async (
   page: Page,
   url: string,
@@ -204,80 +198,78 @@ const scrapePage = async (
     `Navigating to ${url} with waitUntil: ${waitUntil} and timeout: ${timeout}ms`,
   );
 
-  let capturedMainResponse: PlaywrightResponse | null = null;
+  let navResponse: PlaywrightResponse | null = null;
   const onResponse = (resp: PlaywrightResponse) => {
-    if (capturedMainResponse) return;
+    if (navResponse) return;
     const req = resp.request();
-    if (req.frame() !== page.mainFrame()) return;
-    if (!req.isNavigationRequest()) return;
-    capturedMainResponse = resp;
+    if (req.frame() === page.mainFrame() && req.isNavigationRequest()) {
+      navResponse = resp;
+    }
   };
   page.on('response', onResponse);
 
-  let downloadBodyPromise: Promise<Buffer> | undefined;
-  page.once('download', (download) => {
-    downloadBodyPromise = (async () => {
-      const stream = await download.createReadStream();
-      try {
-        return await readStream(stream);
-      } finally {
-        await download.delete().catch(() => undefined);
-      }
-    })();
+  let downloadBytes: Promise<Buffer> | undefined;
+  page.once('download', async (download) => {
+    downloadBytes = download
+      .createReadStream()
+      .then(async (stream) => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of stream) chunks.push(chunk as Buffer);
+        return Buffer.concat(chunks);
+      })
+      .finally(() => download.delete().catch(() => undefined));
   });
 
+  let gotoError: unknown;
   let response: PlaywrightResponse | null = null;
-  let gotoError: unknown = null;
   try {
     response = await page.goto(url, { waitUntil, timeout });
   } catch (error) {
     gotoError = error;
   }
 
-  const finalResponse = response ?? capturedMainResponse;
-  if (!finalResponse && !downloadBodyPromise) {
-    page.off('response', onResponse);
-    throw gotoError ?? new Error('No response captured');
-  }
-
-  const headers = finalResponse ? await finalResponse.allHeaders() : {};
-  const ct = Object.entries(headers).find(
-    ([k]) => k.toLowerCase() === 'content-type',
-  )?.[1];
-  const isHtml = !!ct && ct.toLowerCase().includes('text/html');
-  const status = finalResponse?.status() ?? 200;
-
-  let bytes: Buffer;
-  if (downloadBodyPromise) {
-    bytes = await downloadBodyPromise;
-  } else if (isHtml && !gotoError) {
-    if (waitAfterLoad > 0) await page.waitForTimeout(waitAfterLoad);
-    if (checkSelector) {
-      try {
-        await page.waitForSelector(checkSelector, { timeout });
-      } catch {
-        page.off('response', onResponse);
-        throw new Error('Required selector not found');
-      }
+  try {
+    const finalResponse = response ?? navResponse;
+    if (!finalResponse && !downloadBytes) {
+      throw gotoError ?? new Error('No response captured');
     }
-    bytes = Buffer.from(await page.content(), 'utf8');
-  } else {
-    // Non-HTML response where no download fired (PDF viewer disabled races,
-    // inline binaries, etc.). response.body() is flaky here because Chromium
-    // discards the buffer once navigation aborts. Re-fetch through the
-    // context's APIRequestContext — same proxy, same TLS config, reliable.
-    const apiResp = await page.context().request.get(url, { maxRedirects: 20 });
-    bytes = await apiResp.body();
+
+    const headers = finalResponse ? await finalResponse.allHeaders() : {};
+    const ct = Object.entries(headers).find(
+      ([k]) => k.toLowerCase() === 'content-type',
+    )?.[1];
+    const isHtml = !!ct && ct.toLowerCase().includes('text/html');
+    const status = finalResponse?.status() ?? 200;
+
+    let bytes: Buffer;
+    if (downloadBytes) {
+      bytes = await downloadBytes;
+    } else if (isHtml && !gotoError) {
+      if (waitAfterLoad > 0) await page.waitForTimeout(waitAfterLoad);
+      if (checkSelector) {
+        try {
+          await page.waitForSelector(checkSelector, { timeout });
+        } catch {
+          throw new Error('Required selector not found');
+        }
+      }
+      bytes = Buffer.from(await page.content(), 'utf8');
+    } else {
+      const apiResp = await page
+        .context()
+        .request.get(url, { maxRedirects: 20 });
+      bytes = await apiResp.body();
+    }
+
+    return {
+      content: bytes.toString('base64'),
+      status,
+      headers,
+      contentType: ct,
+    };
+  } finally {
+    page.off('response', onResponse);
   }
-
-  page.off('response', onResponse);
-
-  return {
-    content: bytes.toString('base64'),
-    status,
-    headers,
-    contentType: ct,
-  };
 };
 
 app.get('/health', async (req: Request, res: Response) => {
