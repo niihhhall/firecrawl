@@ -62,8 +62,8 @@ final class ScrapeOptions
         ?string $proxy = null,
         ?int $maxAge = null,
         ?bool $storeInCache = null,
-        ?bool $lockdown = null,
         ?string $integration = null,
+        ?bool $lockdown = null,
     ): self {
         return new self(
             $formats, $headers, $includeTags, $excludeTags, $onlyMainContent,
