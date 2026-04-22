@@ -243,8 +243,25 @@ const scrapePage = async (
     } catch {}
   });
 
+  cdp.on('Fetch.authRequired', async (params: any) => {
+    try {
+      await cdp.send('Fetch.continueWithAuth', {
+        requestId: params.requestId,
+        authChallengeResponse:
+          PROXY_USERNAME && PROXY_PASSWORD
+            ? {
+                response: 'ProvideCredentials',
+                username: PROXY_USERNAME,
+                password: PROXY_PASSWORD,
+              }
+            : { response: 'CancelAuth' },
+      });
+    } catch {}
+  });
+
   await cdp.send('Fetch.enable', {
     patterns: [{ requestStage: 'Response' }],
+    handleAuthRequests: true,
   });
 
   let response: PlaywrightResponse | null = null;
