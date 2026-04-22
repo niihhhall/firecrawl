@@ -359,7 +359,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
         ),
       );
       if (Object.keys(filteredHeaders).length > 0) {
-        await page.setExtraHTTPHeaders(filteredHeaders);
+        await requestContext.setExtraHTTPHeaders(filteredHeaders);
       }
     }
 
