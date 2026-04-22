@@ -84,7 +84,7 @@ export async function scrapeURL(
     if (meta.url !== url) meta.logger.info("Rewriting URL");
 
     try {
-      if (internalOptions.teamFlags?.checkRobotsOnScrape) {
+      if (internalOptions.teamFlags?.checkRobotsOnScrape && !options.lockdown) {
         const denial = await checkRobots(meta);
         if (denial) return denial;
       }
