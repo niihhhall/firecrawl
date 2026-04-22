@@ -113,6 +113,7 @@ const initializeBrowser = async () => {
       '--no-first-run',
       '--no-zygote',
       '--disable-gpu',
+      '--disable-pdf-extension',
     ],
   });
 };
@@ -185,11 +186,10 @@ const isValidUrl = (urlString: string): boolean => {
   }
 };
 
-type CapturedBinary = {
-  bytes: Buffer;
-  status: number;
-  headers: Record<string, string>;
-  contentType: string | undefined;
+const readStream = async (stream: NodeJS.ReadableStream): Promise<Buffer> => {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks);
 };
 
 const scrapePage = async (
@@ -204,64 +204,26 @@ const scrapePage = async (
     `Navigating to ${url} with waitUntil: ${waitUntil} and timeout: ${timeout}ms`,
   );
 
-  const cdp = await page.context().newCDPSession(page);
-  let captured: CapturedBinary | undefined;
+  let capturedMainResponse: PlaywrightResponse | null = null;
+  const onResponse = (resp: PlaywrightResponse) => {
+    if (capturedMainResponse) return;
+    const req = resp.request();
+    if (req.frame() !== page.mainFrame()) return;
+    if (!req.isNavigationRequest()) return;
+    capturedMainResponse = resp;
+  };
+  page.on('response', onResponse);
 
-  cdp.on('Fetch.requestPaused', async (params: any) => {
-    const { requestId, resourceType, responseHeaders, responseStatusCode } =
-      params;
-    const headerList: Array<{ name: string; value: string }> =
-      responseHeaders ?? [];
-    const ct = headerList.find(
-      (h) => h.name.toLowerCase() === 'content-type',
-    )?.value;
-    const isHtml = !!ct && ct.toLowerCase().includes('text/html');
-    const isDocument = resourceType === 'Document';
-    const is2xx = responseStatusCode >= 200 && responseStatusCode < 300;
-
-    try {
-      if (isDocument && is2xx && !isHtml) {
-        const { body, base64Encoded } = await cdp.send(
-          'Fetch.getResponseBody',
-          { requestId },
-        );
-        captured = {
-          bytes: Buffer.from(body, base64Encoded ? 'base64' : 'utf8'),
-          status: responseStatusCode,
-          headers: Object.fromEntries(
-            headerList.map((h) => [h.name.toLowerCase(), h.value]),
-          ),
-          contentType: ct,
-        };
-        await cdp.send('Fetch.failRequest', {
-          requestId,
-          errorReason: 'Aborted',
-        });
-      } else {
-        await cdp.send('Fetch.continueResponse', { requestId });
+  let downloadBodyPromise: Promise<Buffer> | undefined;
+  page.once('download', (download) => {
+    downloadBodyPromise = (async () => {
+      const stream = await download.createReadStream();
+      try {
+        return await readStream(stream);
+      } finally {
+        await download.delete().catch(() => undefined);
       }
-    } catch {}
-  });
-
-  cdp.on('Fetch.authRequired', async (params: any) => {
-    try {
-      await cdp.send('Fetch.continueWithAuth', {
-        requestId: params.requestId,
-        authChallengeResponse:
-          PROXY_USERNAME && PROXY_PASSWORD
-            ? {
-                response: 'ProvideCredentials',
-                username: PROXY_USERNAME,
-                password: PROXY_PASSWORD,
-              }
-            : { response: 'CancelAuth' },
-      });
-    } catch {}
-  });
-
-  await cdp.send('Fetch.enable', {
-    patterns: [{ requestStage: 'Response' }],
-    handleAuthRequests: true,
+    })();
   });
 
   let response: PlaywrightResponse | null = null;
@@ -272,33 +234,47 @@ const scrapePage = async (
     gotoError = error;
   }
 
-  if (captured) {
-    return {
-      content: captured.bytes.toString('base64'),
-      status: captured.status,
-      headers: captured.headers,
-      contentType: captured.contentType,
-    };
+  const finalResponse = response ?? capturedMainResponse;
+  if (!finalResponse && !downloadBodyPromise) {
+    page.off('response', onResponse);
+    throw gotoError ?? new Error('No response captured');
   }
 
-  if (!response) throw gotoError ?? new Error('No response captured');
-
-  if (waitAfterLoad > 0) await page.waitForTimeout(waitAfterLoad);
-  if (checkSelector) {
-    try {
-      await page.waitForSelector(checkSelector, { timeout });
-    } catch {
-      throw new Error('Required selector not found');
-    }
-  }
-
-  const headers = await response.allHeaders();
+  const headers = finalResponse ? await finalResponse.allHeaders() : {};
   const ct = Object.entries(headers).find(
     ([k]) => k.toLowerCase() === 'content-type',
   )?.[1];
+  const isHtml = !!ct && ct.toLowerCase().includes('text/html');
+  const status = finalResponse?.status() ?? 200;
+
+  let bytes: Buffer;
+  if (downloadBodyPromise) {
+    bytes = await downloadBodyPromise;
+  } else if (isHtml && !gotoError) {
+    if (waitAfterLoad > 0) await page.waitForTimeout(waitAfterLoad);
+    if (checkSelector) {
+      try {
+        await page.waitForSelector(checkSelector, { timeout });
+      } catch {
+        page.off('response', onResponse);
+        throw new Error('Required selector not found');
+      }
+    }
+    bytes = Buffer.from(await page.content(), 'utf8');
+  } else {
+    // Non-HTML response where no download fired (PDF viewer disabled races,
+    // inline binaries, etc.). response.body() is flaky here because Chromium
+    // discards the buffer once navigation aborts. Re-fetch through the
+    // context's APIRequestContext — same proxy, same TLS config, reliable.
+    const apiResp = await page.context().request.get(url, { maxRedirects: 20 });
+    bytes = await apiResp.body();
+  }
+
+  page.off('response', onResponse);
+
   return {
-    content: Buffer.from(await page.content(), 'utf8').toString('base64'),
-    status: response.status(),
+    content: bytes.toString('base64'),
+    status,
     headers,
     contentType: ct,
   };
