@@ -367,6 +367,23 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     if (!result && !skipOCR) {
       const base64Content = (await readFile(tempFilePath)).toString("base64");
 
+      if (
+        !routeToMinerU &&
+        config.FIRE_PDF_ENABLE &&
+        config.FIRE_PDF_BASE_URL &&
+        base64Content.length >= FIRE_PDF_MAX_FILE_SIZE
+      ) {
+        meta.logger.warn("PDF skipped by Fire PDF: exceeds size cap", {
+          method: "scrapePDF",
+          event: "pdf_skipped_size",
+          engine: "firepdf",
+          base64_size_bytes: base64Content.length,
+          max_size_bytes: FIRE_PDF_MAX_FILE_SIZE,
+          scrape_id: meta.id,
+          team_id: meta.internalOptions.teamId,
+        });
+      }
+
       // Route a percentage of traffic to Fire PDF instead of MinerU.
       // forceFirePDF always wins; skip percentage-based Fire PDF when
       // we explicitly routed to MinerU via MINERU_PERCENT.
@@ -426,6 +443,24 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             ).slice(0, 500),
           });
         }
+      }
+
+      if (
+        !result &&
+        !forceFirePDF &&
+        base64Content.length >= MAX_FILE_SIZE &&
+        config.RUNPOD_MU_API_KEY &&
+        config.RUNPOD_MU_POD_ID
+      ) {
+        meta.logger.warn("PDF skipped by RunPod MU: exceeds size cap", {
+          method: "scrapePDF",
+          event: "pdf_skipped_size",
+          engine: "mineru",
+          base64_size_bytes: base64Content.length,
+          max_size_bytes: MAX_FILE_SIZE,
+          scrape_id: meta.id,
+          team_id: meta.internalOptions.teamId,
+        });
       }
 
       if (
