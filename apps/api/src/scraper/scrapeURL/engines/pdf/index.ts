@@ -370,6 +370,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       const base64Content = pdfBuffer.toString("base64");
 
       if (
+        !forceFirePDF &&
         !routeToMinerU &&
         config.FIRE_PDF_ENABLE &&
         config.FIRE_PDF_BASE_URL &&
