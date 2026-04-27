@@ -48,7 +48,7 @@ services:
       - redis
       - playwright-service
       - firecrawl-api
-    command: ["pnpm", "run", "workers"]
+    entrypoint: ["/bin/sh", "-c", "pnpm run workers"]
     networks:
       - backend
 
