@@ -15,7 +15,7 @@ services:
       - POSTGRES_PASSWORD=firecrawl
       - POSTGRES_DB=firecrawl
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_v2:/var/lib/postgresql/data
       - ./scripts/init-nuq.sql:/docker-entrypoint-initdb.d/init-nuq.sql
     networks:
       - backend
@@ -109,7 +109,7 @@ services:
     command: redis-server --bind 0.0.0.0
 
 volumes:
-  postgres_data:
+  postgres_data_v2:
 
 networks:
   backend:
