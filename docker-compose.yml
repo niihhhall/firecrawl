@@ -16,6 +16,7 @@ services:
       - POSTGRES_DB=firecrawl
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-nuq.sql:/docker-entrypoint-initdb.d/init-nuq.sql
     networks:
       - backend
     healthcheck:
