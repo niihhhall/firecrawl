@@ -21,7 +21,6 @@ services:
       - HOST=0.0.0.0
       - BULL_AUTH_KEY=markeye_secret_key
       - USE_DB_AUTHENTICATION=false
-      - COREPACK_INTEGRITY_KEYS=0
     depends_on:
       - redis
       - playwright-service
@@ -43,12 +42,11 @@ services:
       - HOST=0.0.0.0
       - BULL_AUTH_KEY=markeye_secret_key
       - USE_DB_AUTHENTICATION=false
-      - COREPACK_INTEGRITY_KEYS=0
     depends_on:
       - redis
       - playwright-service
       - firecrawl-api
-    entrypoint: ["/bin/sh", "-c", "pnpm run workers"]
+    command: ["node", "dist/src/services/queue-worker.js"]
     networks:
       - backend
 
