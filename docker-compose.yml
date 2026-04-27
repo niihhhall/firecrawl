@@ -24,6 +24,16 @@ services:
       timeout: 5s
       retries: 5
 
+  rabbitmq:
+    image: rabbitmq:3-alpine
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   firecrawl-api:
     build:
       context: ./apps/api
@@ -39,11 +49,14 @@ services:
       - USE_DB_AUTHENTICATION=false
       - NUQ_DATABASE_URL=postgresql://firecrawl:firecrawl@postgres:5432/firecrawl
       - NUQ_DATABASE_URL_LISTEN=postgresql://firecrawl:firecrawl@postgres:5432/firecrawl
+      - NUQ_RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
       - SUPABASE_ANON_TOKEN=placeholder
       - SUPABASE_URL=placeholder
       - SUPABASE_SERVICE_TOKEN=placeholder
     depends_on:
       postgres:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
       redis:
         condition: service_started
@@ -69,11 +82,14 @@ services:
       - USE_DB_AUTHENTICATION=false
       - NUQ_DATABASE_URL=postgresql://firecrawl:firecrawl@postgres:5432/firecrawl
       - NUQ_DATABASE_URL_LISTEN=postgresql://firecrawl:firecrawl@postgres:5432/firecrawl
+      - NUQ_RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
       - SUPABASE_ANON_TOKEN=placeholder
       - SUPABASE_URL=placeholder
       - SUPABASE_SERVICE_TOKEN=placeholder
     depends_on:
       postgres:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
       redis:
         condition: service_started
