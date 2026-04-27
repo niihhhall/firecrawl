@@ -37,8 +37,8 @@ services:
       - HOST=0.0.0.0
       - BULL_AUTH_KEY=markeye_secret_key
       - USE_DB_AUTHENTICATION=false
-      - DATABASE_URL=postgresql://firecrawl:firecrawl@postgres:5432/firecrawl
-      - DATABASE_DRIVER=postgresql
+      - NUQ_DATABASE_URL=postgresql://firecrawl:firecrawl@postgres:5432/firecrawl
+      - NUQ_DATABASE_URL_LISTEN=postgresql://firecrawl:firecrawl@postgres:5432/firecrawl
       - SUPABASE_ANON_TOKEN=placeholder
       - SUPABASE_URL=placeholder
       - SUPABASE_SERVICE_TOKEN=placeholder
@@ -67,8 +67,8 @@ services:
       - HOST=0.0.0.0
       - BULL_AUTH_KEY=markeye_secret_key
       - USE_DB_AUTHENTICATION=false
-      - DATABASE_URL=postgresql://firecrawl:firecrawl@postgres:5432/firecrawl
-      - DATABASE_DRIVER=postgresql
+      - NUQ_DATABASE_URL=postgresql://firecrawl:firecrawl@postgres:5432/firecrawl
+      - NUQ_DATABASE_URL_LISTEN=postgresql://firecrawl:firecrawl@postgres:5432/firecrawl
       - SUPABASE_ANON_TOKEN=placeholder
       - SUPABASE_URL=placeholder
       - SUPABASE_SERVICE_TOKEN=placeholder
