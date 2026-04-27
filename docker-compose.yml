@@ -8,6 +8,22 @@ services:
     networks:
       - backend
 
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=firecrawl
+      - POSTGRES_PASSWORD=firecrawl
+      - POSTGRES_DB=firecrawl
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U firecrawl"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   firecrawl-api:
     build:
       context: ./apps/api
@@ -21,9 +37,18 @@ services:
       - HOST=0.0.0.0
       - BULL_AUTH_KEY=markeye_secret_key
       - USE_DB_AUTHENTICATION=false
+      - DATABASE_URL=postgresql://firecrawl:firecrawl@postgres:5432/firecrawl
+      - DATABASE_DRIVER=postgresql
+      - SUPABASE_ANON_TOKEN=placeholder
+      - SUPABASE_URL=placeholder
+      - SUPABASE_SERVICE_TOKEN=placeholder
     depends_on:
-      - redis
-      - playwright-service
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      playwright-service:
+        condition: service_started
     ports:
       - "3002:3002"
     networks:
@@ -42,10 +67,20 @@ services:
       - HOST=0.0.0.0
       - BULL_AUTH_KEY=markeye_secret_key
       - USE_DB_AUTHENTICATION=false
+      - DATABASE_URL=postgresql://firecrawl:firecrawl@postgres:5432/firecrawl
+      - DATABASE_DRIVER=postgresql
+      - SUPABASE_ANON_TOKEN=placeholder
+      - SUPABASE_URL=placeholder
+      - SUPABASE_SERVICE_TOKEN=placeholder
     depends_on:
-      - redis
-      - playwright-service
-      - firecrawl-api
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      playwright-service:
+        condition: service_started
+      firecrawl-api:
+        condition: service_started
     command: ["node", "dist/src/services/queue-worker.js"]
     networks:
       - backend
@@ -55,6 +90,9 @@ services:
     networks:
       - backend
     command: redis-server --bind 0.0.0.0
+
+volumes:
+  postgres_data:
 
 networks:
   backend:
